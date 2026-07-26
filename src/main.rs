@@ -800,6 +800,16 @@ fn resolve_catalog_source(
         if !status.success() {
             bail!("could not refresh catalog repository {source}");
         }
+        // This is Shu-owned cache state, never a user repository. Resetting it makes
+        // `shu update` reflect the fetched catalog without touching local projects.
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&cache)
+            .args(["reset", "--hard", "FETCH_HEAD"])
+            .status()?;
+        if !status.success() {
+            bail!("could not update cached catalog repository {source}");
+        }
     }
     let filename = file.unwrap_or_else(|| Path::new("shu.toml"));
     let target = cache.join(filename);
