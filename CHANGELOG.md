@@ -15,6 +15,13 @@ and releases use [Semantic Versioning](https://semver.org/).
   rerunning an installer.
 - GitHub Release packaging with checksums and simple macOS/Linux and Windows
   installers.
+- A plain-language security policy, scheduled RustSec audits, and Dependabot
+  updates for Cargo and GitHub Actions.
+
+### Security
+
+- Reject repository identities that could escape the configured repository root.
+- Pin GitHub Actions to immutable revisions; Dependabot maintains the pins.
 
 ## [0.1.0] - 2026-07-27
 

@@ -1,0 +1,27 @@
+name: Security
+
+on:
+  push:
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - .github/workflows/security.yml
+  pull_request:
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - .github/workflows/security.yml
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rustsec:
+    name: RustSec advisory audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998

@@ -27,8 +27,8 @@ jobs:
             target: aarch64-unknown-linux-musl
             cross: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.target }}
       - name: Install Linux build tools
@@ -61,7 +61,7 @@ jobs:
             tar -C "$(dirname "$binary")" -cJf "dist/shu-${{ matrix.target }}.tar.xz" "$(basename "$binary")"
             cp "$binary" "dist/shu-${{ matrix.target }}"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.target }}
           path: dist/*
@@ -72,8 +72,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: release-*
           merge-multiple: true
@@ -88,10 +88,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes_file="$(mktemp)"
+          printf '## Changelog\n\nSee [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for curated release notes.\n\n' \
+            "${GITHUB_REPOSITORY}" "${GITHUB_SHA}" > "$notes_file"
           prerelease=()
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             prerelease=(--prerelease)
           fi
-          gh release create "${GITHUB_REF_NAME}" release/* "${prerelease[@]}" \
+          gh release create "${GITHUB_REF_NAME}" release/* "${prerelease[@]}" --notes-file "$notes_file" \
             --title "Shu ${GITHUB_REF_NAME#v}" \
             --generate-notes
