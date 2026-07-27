@@ -29,23 +29,35 @@ if ($Version -eq 'latest') {
     $downloadBase = "https://github.com/$Repository/releases/download/$Version"
 }
 
+Write-Host ''
+Write-Host 'Shu installer'
+Write-Host ''
+Write-Host '  Platform: x86_64-pc-windows-msvc'
+Write-Host "  Release: $Version"
+
 $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("shu-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $temporaryDirectory -Force | Out-Null
 try {
     $archive = Join-Path $temporaryDirectory $asset
     $checksums = Join-Path $temporaryDirectory 'SHA256SUMS'
+    Write-Host "  Downloading $asset"
     Invoke-WebRequest -Uri "$downloadBase/$asset" -OutFile $archive
+    Write-Host '  Downloading SHA256SUMS'
     Invoke-WebRequest -Uri "$downloadBase/SHA256SUMS" -OutFile $checksums
 
+    Write-Host '  Verifying checksum'
     $checksumLine = Get-Content $checksums | Where-Object { $_ -match ("\*?" + [regex]::Escape($asset) + '$') } | Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace($checksumLine)) { throw "$asset was not listed in SHA256SUMS" }
     $expected = ($checksumLine -split '\s+')[0].ToLowerInvariant()
     $actual = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
     if ($expected -ne $actual) { throw "Checksum verification failed for $asset" }
 
+    Write-Host '  Extracting'
     Expand-Archive -Path $archive -DestinationPath $temporaryDirectory -Force
+    $binary = Get-ChildItem -Path $temporaryDirectory -Filter 'shu.exe' -File -Recurse | Select-Object -First 1
+    if ($null -eq $binary) { throw "The $asset archive does not contain shu.exe" }
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    Copy-Item (Join-Path $temporaryDirectory 'shu.exe') (Join-Path $InstallDir 'shu.exe') -Force
+    Copy-Item $binary.FullName (Join-Path $InstallDir 'shu.exe') -Force
 } finally {
     Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -58,4 +70,4 @@ if (-not $NoPathUpdate -and ($userPath -split ';' | Where-Object { $_ -eq $Insta
 } else {
     $pathNotice = ''
 }
-Write-Host "Installed Shu to $(Join-Path $InstallDir 'shu.exe').$pathNotice"
+Write-Host "✓ Installed Shu to $(Join-Path $InstallDir 'shu.exe').$pathNotice"

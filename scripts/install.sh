@@ -12,6 +12,9 @@ repository="${SHU_INSTALL_REPO:-wiedymi/shu}"
 version="${SHU_VERSION:-latest}"
 install_dir="${SHU_INSTALL_DIR:-$HOME/.local/bin}"
 
+info() { printf '  %s\n' "$1"; }
+success() { printf '✓ %s\n' "$1"; }
+
 case "$(uname -s)" in
     Darwin) operating_system="apple-darwin" ;;
     Linux) operating_system="unknown-linux-musl" ;;
@@ -33,6 +36,10 @@ else
     download_base="https://github.com/${repository}/releases/download/${version}"
 fi
 
+printf '\nShu installer\n\n'
+info "Platform: $target"
+info "Release: $version"
+
 if command -v curl >/dev/null 2>&1; then
     download() { curl --proto '=https' --tlsv1.2 -fL --retry 3 --output "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
@@ -46,9 +53,12 @@ temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/shu.XXXXXX")"
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
 archive="$temporary_directory/$asset"
 checksums="$temporary_directory/SHA256SUMS"
+info "Downloading $asset"
 download "$download_base/$asset" "$archive"
+info "Downloading SHA256SUMS"
 download "$download_base/SHA256SUMS" "$checksums"
 
+info "Verifying checksum"
 expected="$(awk -v asset="$asset" '$2 == asset || $2 == "*" asset { print $1; exit }' "$checksums")"
 if [ -z "$expected" ]; then
     echo "error: $asset was not listed in SHA256SUMS" >&2
@@ -64,10 +74,11 @@ if [ "$expected" != "$actual" ]; then
     exit 1
 fi
 
+info "Extracting"
 tar -xJf "$archive" -C "$temporary_directory"
 mkdir -p "$install_dir"
 install -m 755 "$temporary_directory/shu" "$install_dir/shu"
-printf 'Installed Shu to %s\n' "$install_dir/shu"
+success "Installed Shu to $install_dir/shu"
 case ":${PATH}:" in
     *":${install_dir}:"*) ;;
     *) printf 'Add %s to PATH, then open a new terminal.\n' "$install_dir" ;;

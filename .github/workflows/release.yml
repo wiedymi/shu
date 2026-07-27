@@ -55,7 +55,10 @@ jobs:
           binary="target/${{ matrix.target }}/release/shu"
           if [ "${{ runner.os }}" = "Windows" ]; then
             binary="${binary}.exe"
-            7z a "dist/shu-${{ matrix.target }}.zip" "$binary"
+            (
+              cd "$(dirname "$binary")"
+              7z a "$GITHUB_WORKSPACE/dist/shu-${{ matrix.target }}.zip" "shu.exe"
+            )
             cp "$binary" "dist/shu-${{ matrix.target }}.exe"
           else
             tar -C "$(dirname "$binary")" -cJf "dist/shu-${{ matrix.target }}.tar.xz" "$(basename "$binary")"

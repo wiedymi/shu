@@ -16,11 +16,12 @@ try {
     $assets = Join-Path $workspace 'assets'
     $payload = Join-Path $workspace 'payload'
     $installed = Join-Path $workspace 'installed'
-    New-Item -ItemType Directory -Path $assets, $payload -Force | Out-Null
-    Copy-Item $BinaryPath (Join-Path $payload 'shu.exe')
+    $nestedBinaryDirectory = Join-Path $payload 'target\x86_64-pc-windows-msvc\release'
+    New-Item -ItemType Directory -Path $assets, $nestedBinaryDirectory -Force | Out-Null
+    Copy-Item $BinaryPath (Join-Path $nestedBinaryDirectory 'shu.exe')
     $asset = 'shu-x86_64-pc-windows-msvc.zip'
     $archive = Join-Path $assets $asset
-    Compress-Archive -Path (Join-Path $payload 'shu.exe') -DestinationPath $archive
+    Compress-Archive -Path (Join-Path $payload 'target') -DestinationPath $archive
     $hash = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
     Set-Content -Path (Join-Path $assets 'SHA256SUMS') -Value "$hash  $asset"
 
