@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-use crate::{catalog::state_dir, hash::sha256_hex, identity::normalize_identity};
+use crate::{catalog::state_dir, hash::sha256_hex, http, identity::normalize_identity};
 use anyhow::{Context, Result, anyhow, bail};
 
 /// Resolve a supported catalog source into its TOML text.
@@ -84,14 +84,7 @@ fn fetch_repository(source: &str, file: Option<&Path>, git_ref: Option<&str>) ->
 
 /// Download a direct TOML URL with an explicit Shu user agent.
 fn http_get(url: &str) -> Result<String> {
-    reqwest::blocking::Client::builder()
-        .user_agent("shu/0.1")
-        .build()?
-        .get(url)
-        .send()?
-        .error_for_status()?
-        .text()
-        .context("could not read catalog response")
+    http::get_text(&http::agent(), url, "catalog source")
 }
 
 /// Read one named catalog file from a public GitHub Gist.
@@ -102,13 +95,9 @@ fn fetch_gist(source: &str, file: Option<&Path>) -> Result<String> {
         .next()
         .ok_or_else(|| anyhow!("invalid Gist URL"))?;
     let api = format!("https://api.github.com/gists/{id}");
-    let value: serde_json::Value = reqwest::blocking::Client::builder()
-        .user_agent("shu/0.1")
-        .build()?
-        .get(api)
-        .send()?
-        .error_for_status()?
-        .json()?;
+    let response = http::get_text(&http::agent(), &api, "Gist catalog")?;
+    let value: serde_json::Value =
+        serde_json::from_str(&response).context("could not parse the Gist catalog response")?;
     let wanted = file
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())

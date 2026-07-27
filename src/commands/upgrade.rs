@@ -9,7 +9,7 @@ use std::{
 #[cfg(windows)]
 use std::process::Command;
 
-use crate::{cli::UpgradeArgs, hash::sha256_hex};
+use crate::{cli::UpgradeArgs, hash::sha256_hex, http};
 use anyhow::{Context, Result, anyhow, bail};
 
 const RELEASE_REPOSITORY: &str = "wiedymi/shu";
@@ -29,9 +29,7 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     eprintln!("\nShu upgrade\n");
     eprintln!("  Platform: {target}");
     eprintln!("  Release: {}", args.version.as_deref().unwrap_or("latest"));
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(concat!("shu/", env!("CARGO_PKG_VERSION")))
-        .build()?;
+    let client = http::agent();
     eprintln!("  Downloading SHA256SUMS");
     let manifest = get_text(&client, &format!("{base}/SHA256SUMS"))?;
     eprintln!("  Reading release manifest");
@@ -94,42 +92,35 @@ fn executable_extension() -> &'static str {
 }
 
 /// Download text from an HTTPS release asset with an informative error.
-fn get_text(client: &reqwest::blocking::Client, url: &str) -> Result<String> {
-    client
-        .get(url)
-        .send()
-        .with_context(|| format!("could not download {url}"))?
-        .error_for_status()
-        .with_context(|| {
-            format!(
-                "release asset was unavailable: {url}. Check your internet connection and release access"
-            )
-        })?
-        .text()
-        .context("release manifest was not valid text")
+fn get_text(client: &ureq::Agent, url: &str) -> Result<String> {
+    http::get_text(client, url, "release manifest").with_context(|| {
+        format!(
+            "release asset was unavailable: {url}. Check your internet connection and release access"
+        )
+    })
 }
 
 /// Download a binary release asset while reporting its progress to the terminal.
-fn get_bytes(client: &reqwest::blocking::Client, url: &str, asset: &str) -> Result<Vec<u8>> {
-    let mut response = client
-        .get(url)
-        .send()
-        .with_context(|| format!("could not download {url}"))?
-        .error_for_status()
-        .with_context(|| {
+fn get_bytes(client: &ureq::Agent, url: &str, asset: &str) -> Result<Vec<u8>> {
+    let mut response = http::get(client, url, "release asset").with_context(|| {
             format!(
                 "release asset was unavailable: {url}. Check your internet connection and release access"
             )
         })?;
-    let capacity = response
-        .content_length()
+    let content_length = response
+        .headers()
+        .get("content-length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok());
+    let capacity = content_length
         .and_then(|length| usize::try_from(length).ok())
         .unwrap_or_default();
     let mut bytes = Vec::with_capacity(capacity);
-    let mut progress = DownloadProgress::new(asset, response.content_length());
+    let mut progress = DownloadProgress::new(asset, content_length);
+    let mut reader = response.body_mut().as_reader();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = response
+        let read = reader
             .read(&mut buffer)
             .context("could not read downloaded binary")?;
         if read == 0 {

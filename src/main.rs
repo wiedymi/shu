@@ -19,6 +19,8 @@ mod commands;
 mod git;
 /// Hashing helpers for cache keys and release verification.
 mod hash;
+/// Shared HTTPS client configuration and download helpers.
+mod http;
 /// Git remote and repository-identity normalization.
 mod identity;
 /// Serializable catalog data structures.

@@ -7,6 +7,18 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-27
+
+### Changed
+
+- Reduced release-binary size with a dedicated size-focused Rust release
+  profile and replaced `reqwest` with the smaller blocking `ureq` client.
+- Use the platform certificate verifier for catalog and release HTTPS requests,
+  preserving the user's operating-system trust store for arbitrary catalog
+  source URLs.
+- Build and record the size of all five release targets in pull-request CI,
+  before a release is published.
+
 ## [0.1.5] - 2026-07-27
 
 ### Added
@@ -102,7 +114,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/wiedymi/shu/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/wiedymi/shu/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/wiedymi/shu/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/wiedymi/shu/compare/v0.1.2...v0.1.3
