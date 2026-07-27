@@ -6,8 +6,11 @@
 
 use std::{
     fs,
+    io::{Read, Write},
+    net::TcpListener,
     path::{Path, PathBuf},
     process::{Command, Output},
+    thread,
 };
 
 use serde_json::Value;
@@ -115,6 +118,31 @@ fn activates_a_local_catalog_source_and_refreshes_it_with_update() {
             "example-org/api",
         ])
         .assert_success();
+}
+
+#[test]
+fn activates_a_catalog_from_a_direct_http_url() {
+    let fixture = Fixture::new();
+    let source = fixture.write_empty_catalog("served-library.toml");
+    let (url, server) = serve_once(fs::read_to_string(source).unwrap());
+    let active = fixture.temp.path().join("active.toml");
+
+    fixture
+        .shu([
+            "--catalog",
+            active.to_str().unwrap(),
+            "--yes",
+            "restore",
+            &url,
+        ])
+        .assert_success();
+    server.join().unwrap();
+
+    assert!(active.exists(), "direct catalog URLs should become active");
+    assert!(
+        active.with_extension("origin.json").exists(),
+        "direct catalog URLs should retain their source"
+    );
 }
 
 #[test]
@@ -573,6 +601,29 @@ fn run_git<const N: usize>(working_dir: &Path, args: [&str; N], path_argument: O
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// Serve one catalog response so direct-URL resolution is tested without internet access.
+fn serve_once(body: String) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let request_bytes = stream.read(&mut request).unwrap();
+        assert!(
+            request_bytes > 0,
+            "the catalog client should send a request"
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .unwrap();
+    });
+    (format!("http://{address}/shu.toml"), server)
 }
 
 fn normalize_path(path: &str) -> String {
