@@ -13,7 +13,7 @@ use crate::model::Lifecycle;
     version,
     about = "A tiny, declarative, agent-friendly repository library",
     long_about = "Shu keeps a portable catalog of Git repositories, restores missing clones into predictable paths, and lets people and agents resolve repositories reliably.",
-    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu restore github.com/your-account/repository-library\n  shu ensure api --path-only"
+    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu add . --migrate --dry-run\n  shu restore github.com/your-account/repository-library\n  shu ensure api --path-only"
 )]
 pub struct Cli {
     /// Use a specific catalog rather than the active catalog.
@@ -103,6 +103,12 @@ pub struct AddArgs {
     /// Optional human-readable context for the repository.
     #[arg(long)]
     pub note: Option<String>,
+    /// Move a clean local working tree into Shu's canonical repository layout.
+    #[arg(long)]
+    pub migrate: bool,
+    /// Preview a migration without moving files or changing the catalog.
+    #[arg(long, requires = "migrate")]
+    pub dry_run: bool,
 }
 
 /// Arguments for `shu edit`.

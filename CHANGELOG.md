@@ -7,6 +7,18 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-27
+
+### Added
+
+- `shu add . --migrate` for previewing and atomically moving a clean local
+  Git working tree into Shu's canonical managed layout.
+
+### Security
+
+- Migration refuses dirty repositories, linked worktrees, existing targets,
+  and non-atomic cross-filesystem moves.
+
 ## [0.1.4] - 2026-07-27
 
 ### Added
@@ -90,7 +102,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/wiedymi/shu/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/wiedymi/shu/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/wiedymi/shu/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/wiedymi/shu/compare/v0.1.1...v0.1.2

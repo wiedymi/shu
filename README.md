@@ -69,6 +69,7 @@ shu restore             # Clone catalogued repositories that are missing
 shu doctor              # Check Git, the catalog, and the configured root
 shu ensure my-project   # Ensure one repository exists and print its path
 shu edit my-project --state parked --note "Paused until the next release"
+shu add . --migrate     # Move a clean local repository into ~/shu's layout
 ```
 
 To make bare `shu` open the picker, add its small shell wrapper once:
@@ -117,6 +118,19 @@ metadata without changing repository files:
 shu edit my-project --state reference --note "Useful implementation reference"
 shu edit my-project --clear-note
 ```
+
+To bring an existing clean clone into Shu's managed layout, preview the move
+first, then confirm it:
+
+```sh
+shu add . --migrate --dry-run
+shu add . --migrate
+```
+
+Migration only moves valid, clean working trees. Shu refuses repositories with
+staged, unstaged, or untracked changes; linked Git worktrees; an existing
+canonical destination; or a destination on another filesystem. It never copies
+then deletes a repository as a fallback.
 
 ## Updating
 
