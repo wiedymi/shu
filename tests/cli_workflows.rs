@@ -182,7 +182,15 @@ fn picks_a_local_repository_without_an_external_fuzzy_finder() {
 
 #[test]
 fn emits_navigation_wrappers_for_supported_shells() {
-    for shell in ["bash", "zsh", "fish", "powershell", "nushell", "posix"] {
+    for shell in [
+        "bash",
+        "zsh",
+        "fish",
+        "powershell",
+        "pwsh",
+        "nushell",
+        "posix",
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_shu"))
             .args(["shell", "init", shell])
             .output()
@@ -196,9 +204,119 @@ fn emits_navigation_wrappers_for_supported_shells() {
     }
 }
 
+#[test]
+fn initializes_a_missing_catalog_without_blocking_everyday_commands() {
+    let fixture = Fixture::new();
+    let catalog = fixture.temp.path().join("new-library.toml");
+
+    let status = fixture.shu(["--catalog", catalog.to_str().unwrap(), "status"]);
+    status.assert_success();
+    assert!(catalog.exists(), "status should create the missing catalog");
+    let report = String::from_utf8(status.stdout).unwrap();
+    assert!(report.contains("No repositories are catalogued yet."));
+    assert!(report.contains("shu add ."));
+
+    let picked = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--path-only",
+    ]);
+    picked.assert_success();
+    assert!(picked.stdout.is_empty());
+}
+
+#[test]
+fn explains_missing_repositories_and_edits_metadata_from_a_local_clone() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_catalog("library.toml");
+
+    let duplicate = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "add",
+        fixture.seed.to_str().unwrap(),
+    ]);
+    assert!(!duplicate.status.success());
+    let duplicate_error = String::from_utf8(duplicate.stderr).unwrap();
+    assert!(duplicate_error.contains("already in the catalog"));
+    assert!(duplicate_error.contains("shu edit api --state <state> --note <text>"));
+
+    let mistaken_update = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "update",
+        fixture.seed.to_str().unwrap(),
+        "--state",
+        "active",
+    ]);
+    assert!(!mistaken_update.status.success());
+    assert!(
+        String::from_utf8(mistaken_update.stderr)
+            .unwrap()
+            .contains("shu edit")
+    );
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "edit",
+            fixture.seed.to_str().unwrap(),
+            "--state",
+            "parked",
+            "--note",
+            "Keep the first working prototype.",
+        ])
+        .assert_success();
+
+    let status = fixture.shu(["--catalog", catalog.to_str().unwrap(), "status"]);
+    status.assert_success();
+    let report = String::from_utf8(status.stdout).unwrap();
+    assert!(report.contains("PARKED"));
+    assert!(report.contains("missing"));
+    assert!(report.contains("Expected:"));
+    assert!(report.contains("shu ensure api"));
+    assert!(report.contains("Keep the first working prototype."));
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "edit",
+            "api",
+            "--clear-note",
+        ])
+        .assert_success();
+}
+
+#[cfg(windows)]
+#[test]
+fn powershell_setup_command_is_evaluable_and_forwards_to_the_binary() {
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_shu"));
+    let binary_directory = binary.parent().unwrap();
+    let quote = |path: &Path| path.to_string_lossy().replace('\'', "''");
+    let command = format!(
+        "$env:Path = '{};' + $env:Path; Invoke-Expression ((& '{}' shell init pwsh) -join [Environment]::NewLine); shu --version",
+        quote(binary_directory),
+        quote(&binary),
+    );
+    let output = Command::new("pwsh")
+        .args(["-NoProfile", "-Command", &command])
+        .output()
+        .unwrap();
+    output.assert_success();
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .starts_with("shu ")
+    );
+}
+
 struct Fixture {
     temp: TempDir,
     root: PathBuf,
+    seed: PathBuf,
     rewrite_prefix: String,
 }
 
@@ -230,11 +348,22 @@ impl Fixture {
         run_git(&seed, ["remote", "add", "origin"], Some(&remote));
         run_git(&seed, ["push", "-u", "origin", "main"], None);
         run_git(&remote, ["symbolic-ref", "HEAD", "refs/heads/main"], None);
+        run_git(
+            &seed,
+            [
+                "remote",
+                "set-url",
+                "origin",
+                "git@github.com:example-org/api.git",
+            ],
+            None,
+        );
 
         let rewrite_prefix = format!("file://{}/", remotes.to_string_lossy().replace('\\', "/"));
         Self {
             root: temp.path().join("library"),
             temp,
+            seed,
             rewrite_prefix,
         }
     }

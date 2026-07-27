@@ -27,6 +27,8 @@ mod model;
 mod paths;
 /// Loading catalogs from files, URLs, Gists, and Git repositories.
 mod sources;
+/// Consistent terminal output for people and scripts.
+mod ui;
 
 use anyhow::Result;
 use clap::Parser;
@@ -35,7 +37,7 @@ use cli::{Cli, Commands};
 /// Run the CLI and render any error as a concise diagnostic.
 fn main() {
     if let Err(error) = run() {
-        eprintln!("error: {error:#}");
+        ui::render_error(&error);
         std::process::exit(1);
     }
 }
@@ -47,11 +49,12 @@ fn run() -> Result<()> {
         None => commands::pick(&cli, &Default::default()),
         Some(Commands::Init) => commands::init(&cli),
         Some(Commands::Add(args)) => commands::add(&cli, args),
+        Some(Commands::Edit(args)) => commands::edit(&cli, args),
         Some(Commands::Scan(args)) => commands::scan(&cli, args),
         Some(Commands::Doctor(args)) => commands::doctor(&cli, args),
         Some(Commands::Status(filter)) => commands::status(&cli, filter),
         Some(Commands::Restore(args)) => commands::restore(&cli, args),
-        Some(Commands::Update) => commands::update(&cli),
+        Some(Commands::Update(args)) => commands::update(&cli, args),
         Some(Commands::Upgrade(args)) => commands::upgrade(args),
         Some(Commands::Ensure(args)) => commands::ensure(&cli, args),
         Some(Commands::Path(args)) => commands::path_command(&cli, args),

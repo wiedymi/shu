@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -26,12 +26,17 @@ const MAX_VISIBLE_RESULTS: usize = 12;
 
 /// Interactively select a present local repository with Shu's built-in fuzzy picker.
 pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
-    let (_, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load_or_initialize(cli)?;
     let candidates = catalog::filtered(&catalog, &args.filter)
         .filter_map(|repo| candidate(&catalog, repo).transpose())
         .collect::<Result<Vec<_>>>()?;
     if candidates.is_empty() {
-        bail!("no catalogued repositories are present locally");
+        if !args.path_only {
+            eprintln!("No catalogued repositories are available locally yet.");
+            eprintln!("  Add the current repository:  shu add .");
+            eprintln!("  Restore a saved library:     shu restore <source>");
+        }
+        return Ok(());
     }
 
     let selected = if let Some(query) = &args.filter_query {

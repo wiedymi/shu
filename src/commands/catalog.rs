@@ -10,7 +10,7 @@ use walkdir::WalkDir;
 
 use crate::{
     catalog::{self, catalog_path},
-    cli::{AddArgs, Cli, ScanArgs, SelectorArgs},
+    cli::{AddArgs, Cli, EditArgs, ScanArgs, SelectorArgs},
     git,
     identity::normalize_identity,
     model::{Catalog, Lifecycle, Repo},
@@ -39,14 +39,17 @@ pub fn init(cli: &Cli) -> Result<()> {
 
 /// Add an identity or the current Git repository to the active catalog.
 pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
-    let (path, mut catalog) = catalog::load(cli)?;
+    let (path, mut catalog) = catalog::load_or_initialize(cli)?;
     let identity = normalize_identity(&catalog::source_from_argument(&args.source)?)?;
-    if catalog
+    if let Some(existing) = catalog
         .repos
         .iter()
-        .any(|repo| normalize_identity(&repo.source).ok().as_deref() == Some(&identity))
+        .find(|repo| normalize_identity(&repo.source).ok().as_deref() == Some(&identity))
     {
-        bail!("{identity} is already in the catalog");
+        bail!(
+            "{identity} is already in the catalog. To change its state or note, run `shu edit {} --state <state> --note <text>`",
+            catalog::repo_name(existing)
+        );
     }
     catalog.repos.push(Repo {
         source: identity.clone(),
@@ -56,6 +59,36 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     });
     catalog::save(&path, &catalog)?;
     println!("Added {identity}");
+    Ok(())
+}
+
+/// Change the explicit lifecycle state or note for an existing catalog entry.
+pub fn edit(cli: &Cli, args: &EditArgs) -> Result<()> {
+    if args.state.is_none() && args.note.is_none() && !args.clear_note {
+        bail!("nothing to edit; provide --state, --note, or --clear-note");
+    }
+    let (path, mut catalog) = catalog::load_or_initialize(cli)?;
+    let index = catalog::select_index(&catalog, &args.selector)?;
+    let repo = &mut catalog.repos[index];
+    if let Some(state) = args.state {
+        repo.state = state;
+    }
+    if let Some(note) = &args.note {
+        repo.note = Some(note.clone());
+    } else if args.clear_note {
+        repo.note = None;
+    }
+    let name = catalog::repo_name(repo).to_owned();
+    let state = repo.state;
+    let note = repo.note.clone();
+    catalog::save(&path, &catalog)?;
+
+    println!("Updated {name}");
+    println!("  State: {state}");
+    match note {
+        Some(note) => println!("  Note:  {note}"),
+        None => println!("  Note:  none"),
+    }
     Ok(())
 }
 
@@ -85,7 +118,7 @@ pub fn scan(cli: &Cli, args: &ScanArgs) -> Result<()> {
 
 /// Update a lifecycle field only; no repository files are touched.
 pub fn change_state(cli: &Cli, selector: &str, state: Lifecycle) -> Result<()> {
-    let (path, mut catalog) = catalog::load(cli)?;
+    let (path, mut catalog) = catalog::load_or_initialize(cli)?;
     let index = catalog::select_index(&catalog, selector)?;
     catalog.repos[index].state = state;
     let name = catalog::repo_name(&catalog.repos[index]).to_owned();
@@ -96,7 +129,7 @@ pub fn change_state(cli: &Cli, selector: &str, state: Lifecycle) -> Result<()> {
 
 /// Remove a catalog entry while leaving any local clone intact.
 pub fn forget(cli: &Cli, args: &SelectorArgs) -> Result<()> {
-    let (path, mut catalog) = catalog::load(cli)?;
+    let (path, mut catalog) = catalog::load_or_initialize(cli)?;
     let index = catalog::select_index(&catalog, &args.selector)?;
     let removed = catalog.repos.remove(index);
     catalog::save(&path, &catalog)?;
@@ -137,7 +170,7 @@ pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
 
 /// Add only identities that are not already in the catalog.
 fn import_discovered(cli: &Cli, found: &[(PathBuf, String)]) -> Result<()> {
-    let (path, mut catalog) = catalog::load(cli)?;
+    let (path, mut catalog) = catalog::load_or_initialize(cli)?;
     let mut known: HashSet<String> = catalog
         .repos
         .iter()

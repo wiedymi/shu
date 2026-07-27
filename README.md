@@ -34,7 +34,8 @@ shu restore github.com/your-name/your-repository-library
 ```
 
 Shu reads the repository's root-level `shu.toml`, puts missing repositories
-under `~/shu` by default, and leaves existing repositories alone.
+under `~/shu` by default, and leaves existing repositories alone. If you start
+with an empty machine, everyday commands create an empty local catalog for you.
 
 ## Install
 
@@ -67,6 +68,7 @@ shu status              # See what is present, missing, or uncatalogued
 shu restore             # Clone catalogued repositories that are missing
 shu doctor              # Check Git, the catalog, and the configured root
 shu ensure my-project   # Ensure one repository exists and print its path
+shu edit my-project --state parked --note "Paused until the next release"
 ```
 
 To make bare `shu` open the picker, add its small shell wrapper once:
@@ -80,7 +82,7 @@ shu shell init fish | source
 ```
 
 ```powershell
-Invoke-Expression (& shu shell init powershell)
+Invoke-Expression ((& shu shell init pwsh) -join [Environment]::NewLine)
 ```
 
 For scripts and agents:
@@ -105,6 +107,16 @@ note = "A project I work on regularly"
 The catalog is deliberately data-only: no secrets, setup hooks, or arbitrary
 commands. Shu never deletes repositories, resets a working tree, or overwrites
 a conflicting directory.
+
+When `shu status` says a repository is **missing**, it means the canonical
+clone is not yet under Shu's configured root. It prints the expected path and
+the exact `shu ensure <repository>` command to create it. To update catalog
+metadata without changing repository files:
+
+```sh
+shu edit my-project --state reference --note "Useful implementation reference"
+shu edit my-project --clear-note
+```
 
 ## Updating
 

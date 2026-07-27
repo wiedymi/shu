@@ -53,6 +53,8 @@ pub enum Commands {
     Init,
     /// Add a repository identity or the current Git repository to the catalog.
     Add(AddArgs),
+    /// Change repository metadata such as its lifecycle state or note.
+    Edit(EditArgs),
     /// Discover Git repositories below a directory.
     Scan(ScanArgs),
     /// Check whether Git, the catalog, repository root, and source setup are ready to use.
@@ -62,7 +64,10 @@ pub enum Commands {
     /// Load a catalog source if provided, then clone missing repositories.
     Restore(RestoreArgs),
     /// Refresh the configured catalog source and restore any newly missing repositories.
-    Update,
+    #[command(
+        after_help = "To edit a repository's metadata, use `shu edit <repository> --state <state>` or `shu edit <repository> --note <text>`."
+    )]
+    Update(UpdateArgs),
     /// Download and install the latest verified Shu binary from GitHub Releases.
     Upgrade(UpgradeArgs),
     /// Ensure a catalogued repository exists locally and print its path.
@@ -98,6 +103,22 @@ pub struct AddArgs {
     /// Optional human-readable context for the repository.
     #[arg(long)]
     pub note: Option<String>,
+}
+
+/// Arguments for `shu edit`.
+#[derive(Args)]
+pub struct EditArgs {
+    /// Full identity, unique suffix, repository name, or local repository path.
+    pub selector: String,
+    /// New lifecycle state to record.
+    #[arg(long, value_enum)]
+    pub state: Option<Lifecycle>,
+    /// Replace the existing note with this human-readable context.
+    #[arg(long, conflicts_with = "clear_note")]
+    pub note: Option<String>,
+    /// Remove the existing note.
+    #[arg(long)]
+    pub clear_note: bool,
 }
 
 /// Arguments for `shu scan`.
@@ -145,6 +166,20 @@ pub struct RestoreArgs {
     /// Limit restoration to a tag or lifecycle state.
     #[command(flatten)]
     pub filter: FilterArgs,
+}
+
+/// Compatibility arguments that let `shu update` explain a common command mix-up.
+#[derive(Args, Default)]
+pub struct UpdateArgs {
+    /// Repository selector accidentally supplied to the catalog refresh command.
+    #[arg(value_name = "REPOSITORY", hide = true)]
+    pub selector: Option<String>,
+    /// Lifecycle state accidentally supplied to the catalog refresh command.
+    #[arg(long, value_enum, hide = true)]
+    pub state: Option<Lifecycle>,
+    /// Repository note accidentally supplied to the catalog refresh command.
+    #[arg(long, hide = true)]
+    pub note: Option<String>,
 }
 
 /// Arguments for `shu upgrade`.
@@ -245,7 +280,7 @@ pub enum Shell {
     /// Fish shell syntax.
     Fish,
     /// PowerShell syntax.
-    #[value(name = "powershell")]
+    #[value(name = "powershell", alias = "pwsh")]
     Power,
     /// Nushell syntax.
     Nushell,
