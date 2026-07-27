@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::model::Lifecycle;
 
@@ -41,9 +41,9 @@ pub struct Cli {
     /// Accept safe confirmation prompts.
     #[arg(long, global = true, help = "Accept confirmation prompts")]
     pub yes: bool,
-    /// The operation to run.
+    /// The operation to run; omitting it opens the repository picker.
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 /// All supported Shu commands.
@@ -73,6 +73,10 @@ pub enum Commands {
     Archive(SelectorArgs),
     /// Remove a repository from the catalog without deleting its local clone.
     Forget(SelectorArgs),
+    /// Interactively select a present local repository with Shu's fuzzy picker.
+    Pick(PickArgs),
+    /// Print shell integration that makes bare `shu` navigate into a selected repository.
+    Shell(ShellArgs),
 }
 
 /// Arguments for `shu add`.
@@ -169,4 +173,62 @@ pub struct StateArgs {
     pub selector: String,
     /// The new declared lifecycle state.
     pub state: Lifecycle,
+}
+
+/// Arguments for `shu pick`.
+#[derive(Args, Default)]
+pub struct PickArgs {
+    /// Limit candidates by tag or lifecycle state.
+    #[command(flatten)]
+    pub filter: FilterArgs,
+    /// Pre-fill Shu's fuzzy-search input while keeping the picker interactive.
+    #[arg(long, conflicts_with = "filter_query")]
+    pub query: Option<String>,
+    /// Select non-interactively using a fuzzy query; useful for scripts and integration tests.
+    #[arg(long = "filter", value_name = "QUERY", conflicts_with = "query")]
+    pub filter_query: Option<String>,
+    /// Print exactly one absolute path on success and no decorative text.
+    #[arg(long)]
+    pub path_only: bool,
+}
+
+/// Arguments for `shu shell`.
+#[derive(Args)]
+pub struct ShellArgs {
+    /// Shell-integration operation to perform.
+    #[command(subcommand)]
+    pub command: ShellCommands,
+}
+
+/// Supported shell-integration operations.
+#[derive(Subcommand)]
+pub enum ShellCommands {
+    /// Print a shell wrapper; source it from the appropriate shell startup file.
+    Init(ShellInitArgs),
+}
+
+/// Arguments for `shu shell init`.
+#[derive(Args)]
+pub struct ShellInitArgs {
+    /// Shell syntax to generate.
+    #[arg(value_enum)]
+    pub shell: Shell,
+}
+
+/// Shell syntaxes supported by Shu's navigation wrapper.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum Shell {
+    /// Bash shell syntax.
+    Bash,
+    /// Zsh shell syntax.
+    Zsh,
+    /// Fish shell syntax.
+    Fish,
+    /// PowerShell syntax.
+    #[value(name = "powershell")]
+    Power,
+    /// Nushell syntax.
+    Nushell,
+    /// Portable POSIX `sh` syntax for shells such as dash and ksh.
+    Posix,
 }

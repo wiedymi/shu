@@ -2,7 +2,7 @@
 # wherever you keep personal configuration.
 
 version = 1
-root = "~/Code"
+root = "~/shu"
 
 [[repos]]
 source = "github.com/your-account/main-app"

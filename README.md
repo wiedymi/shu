@@ -38,6 +38,33 @@ Ready-to-copy catalog templates are in [`examples/`](examples/). To try one loca
 shu restore ./examples/personal-library.toml
 ```
 
+## Fast navigation
+
+Shu includes its own cross-platform fuzzy picker; `fzf` is not required.
+Install the small shell wrapper once, then typing bare `shu` opens the picker,
+where typing narrows results, arrow keys move, Enter enters the repository, and
+Esc cancels.
+
+```sh
+# Bash, Zsh, or another POSIX shell: add this output to its startup file.
+shu shell init bash
+
+# Fish, PowerShell, Nushell, and POSIX sh are also supported.
+shu shell init fish
+shu shell init powershell
+shu shell init nushell
+shu shell init posix
+```
+
+The wrapper preserves every normal command (`shu restore`, `shu status`, and so
+on) and only intercepts `shu` with no arguments. The binary-level picker is
+also available for scripting:
+
+```sh
+shu pick --tag work --path-only
+shu pick --filter api --path-only
+```
+
 ## Agent use
 
 ```sh
@@ -62,6 +89,23 @@ cargo doc --no-deps --document-private-items --open
 ```
 
 The generated entry point is `target/doc/shu/index.html`.
+
+## Testing
+
+`cargo test` runs both unit tests and offline end-to-end CLI workflows. The
+integration tests create temporary bare Git remotes and use process-local Git
+URL rewriting, so they do not require network access or alter global Git
+configuration.
+
+The CI matrix runs this suite on Linux, macOS, and Windows. Linux CI also
+builds the production Docker image and executes the same style of workflow in
+the container.
+
+```sh
+cargo test
+docker build --tag shu:test .
+docker run --rm shu:test --help
+```
 
 ## Safety
 

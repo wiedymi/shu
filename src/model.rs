@@ -99,9 +99,19 @@ pub struct RepoOutput {
 
 /// Default canonical root used for a newly initialized catalog.
 pub fn default_root() -> String {
-    "~/Code".into()
+    "~/shu".into()
 }
 /// Default a newly added entry to active when its catalog field is omitted.
 fn default_state() -> Lifecycle {
     Lifecycle::Active
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uses_shu_directory_as_the_default_root() {
+        assert_eq!(default_root(), "~/shu");
+    }
 }

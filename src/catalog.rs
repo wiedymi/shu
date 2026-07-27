@@ -163,7 +163,7 @@ mod tests {
     fn catalog() -> Catalog {
         Catalog {
             version: 1,
-            root: "~/Code".into(),
+            root: "~/shu".into(),
             repos: vec![
                 Repo {
                     source: "github.com/acme/widgets".into(),

@@ -2,7 +2,7 @@
 # shu restore ./examples/team-library.toml --tag backend
 
 version = 1
-root = "~/Code"
+root = "~/shu"
 
 [[repos]]
 source = "github.com/example-org/api"

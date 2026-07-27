@@ -42,19 +42,22 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Init => commands::init(&cli),
-        Commands::Add(args) => commands::add(&cli, args),
-        Commands::Scan(args) => commands::scan(&cli, args),
-        Commands::Status(filter) => commands::status(&cli, filter),
-        Commands::Restore(args) => commands::restore(&cli, args),
-        Commands::Update => commands::update(&cli),
-        Commands::Ensure(args) => commands::ensure(&cli, args),
-        Commands::Path(args) => commands::path_command(&cli, args),
-        Commands::List(args) => commands::list(&cli, args),
-        Commands::State(args) => commands::change_state(&cli, &args.selector, args.state),
-        Commands::Archive(args) => {
+        None => commands::pick(&cli, &Default::default()),
+        Some(Commands::Init) => commands::init(&cli),
+        Some(Commands::Add(args)) => commands::add(&cli, args),
+        Some(Commands::Scan(args)) => commands::scan(&cli, args),
+        Some(Commands::Status(filter)) => commands::status(&cli, filter),
+        Some(Commands::Restore(args)) => commands::restore(&cli, args),
+        Some(Commands::Update) => commands::update(&cli),
+        Some(Commands::Ensure(args)) => commands::ensure(&cli, args),
+        Some(Commands::Path(args)) => commands::path_command(&cli, args),
+        Some(Commands::List(args)) => commands::list(&cli, args),
+        Some(Commands::State(args)) => commands::change_state(&cli, &args.selector, args.state),
+        Some(Commands::Archive(args)) => {
             commands::change_state(&cli, &args.selector, model::Lifecycle::Archived)
         }
-        Commands::Forget(args) => commands::forget(&cli, args),
+        Some(Commands::Forget(args)) => commands::forget(&cli, args),
+        Some(Commands::Pick(args)) => commands::pick(&cli, args),
+        Some(Commands::Shell(args)) => commands::shell(&args.command),
     }
 }
