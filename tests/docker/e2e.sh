@@ -57,5 +57,5 @@ chmod +x "$workspace/fake-bin/curl"
 PATH="$workspace/fake-bin:$PATH" \
 SHU_TEST_RELEASE_ASSETS="$workspace/release-assets" \
 SHU_INSTALL_DIR="$workspace/installed" \
-/scripts/install.sh
+sh /scripts/install.sh
 "$workspace/installed/shu" --version | grep -q '^shu '
