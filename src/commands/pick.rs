@@ -2,11 +2,11 @@
 
 use std::{
     cmp::Reverse,
-    io::{Write, stdout},
+    io::{Write, stderr},
     path::PathBuf,
 };
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -31,12 +31,9 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
         .filter_map(|repo| candidate(&catalog, repo).transpose())
         .collect::<Result<Vec<_>>>()?;
     if candidates.is_empty() {
-        if !args.path_only {
-            eprintln!("No catalogued repositories are available locally yet.");
-            eprintln!("  Add the current repository:  shu add .");
-            eprintln!("  Restore a saved library:     shu restore <source>");
-        }
-        return Ok(());
+        bail!(
+            "no catalogued repositories are available at Shu's managed paths. Run `shu status` to see each expected path; use `shu ensure <repository>` to clone one, or `shu add . --migrate` from an existing clean clone"
+        );
     }
 
     let selected = if let Some(query) = &args.filter_query {
@@ -193,16 +190,19 @@ fn fuzzy_score(candidate: &str, query: &str) -> Option<usize> {
 }
 
 struct PickerTerminal {
-    stdout: std::io::Stdout,
+    stderr: std::io::Stderr,
 }
 
 impl PickerTerminal {
     /// Enter the alternate screen and raw-key mode used by the picker.
     fn enter() -> Result<Self> {
         terminal::enable_raw_mode()?;
-        let mut stdout = stdout();
-        execute!(stdout, EnterAlternateScreen, Hide)?;
-        Ok(Self { stdout })
+        // The selected path must travel over stdout so a shell wrapper can
+        // capture it. Draw the interactive interface on stderr instead: shell
+        // command substitution leaves that stream attached to the terminal.
+        let mut stderr = stderr();
+        execute!(stderr, EnterAlternateScreen, Hide)?;
+        Ok(Self { stderr })
     }
 
     /// Redraw the compact picker UI while keeping output bounded to the terminal.
@@ -210,31 +210,31 @@ impl PickerTerminal {
         let visible = usize::from(terminal::size()?.1)
             .saturating_sub(4)
             .min(MAX_VISIBLE_RESULTS);
-        execute!(self.stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+        execute!(self.stderr, MoveTo(0, 0), Clear(ClearType::All))?;
         writeln!(
-            self.stdout,
+            self.stderr,
             "Shu repositories  type to search · ↑↓ select · Enter open · Esc cancel"
         )?;
-        writeln!(self.stdout, "› {query}")?;
+        writeln!(self.stderr, "› {query}")?;
         if candidates.is_empty() {
-            writeln!(self.stdout, "  No matching local repositories")?;
+            writeln!(self.stderr, "  No matching local repositories")?;
         }
         for (index, candidate) in candidates.iter().take(visible).enumerate() {
             let marker = if index == selected { "›" } else { " " };
             writeln!(
-                self.stdout,
+                self.stderr,
                 "{marker} {:<36} {:<10} {}",
                 candidate.identity, candidate.state, candidate.tags
             )?;
         }
-        self.stdout.flush()?;
+        self.stderr.flush()?;
         Ok(())
     }
 }
 
 impl Drop for PickerTerminal {
     fn drop(&mut self) {
-        let _ = execute!(self.stdout, Show, LeaveAlternateScreen);
+        let _ = execute!(self.stderr, Show, LeaveAlternateScreen);
         let _ = terminal::disable_raw_mode();
     }
 }

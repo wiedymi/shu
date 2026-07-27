@@ -264,16 +264,22 @@ pub struct ShellArgs {
 /// Supported shell-integration operations.
 #[derive(Subcommand)]
 pub enum ShellCommands {
-    /// Print a shell wrapper; source it from the appropriate shell startup file.
+    /// Install Shu's navigation wrapper in a shell startup file.
     Init(ShellInitArgs),
 }
 
 /// Arguments for `shu shell init`.
 #[derive(Args)]
 pub struct ShellInitArgs {
-    /// Shell syntax to generate.
+    /// Shell to integrate with.
     #[arg(value_enum)]
     pub shell: Shell,
+    /// Print the integration instead of writing it to a startup file.
+    #[arg(long, conflicts_with = "path")]
+    pub print: bool,
+    /// Install into this startup file instead of Shu's default for the selected shell.
+    #[arg(long, value_name = "PATH", conflicts_with = "print")]
+    pub path: Option<PathBuf>,
 }
 
 /// Shell syntaxes supported by Shu's navigation wrapper.

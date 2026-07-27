@@ -36,6 +36,16 @@ shu --catalog "$workspace/shu.toml" doctor | grep -q '^✓ catalog:'
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$path"
 shu --catalog "$workspace/shu.toml" --json list | grep -q '"observed_state": "present"'
 
+# Shell setup is persistent and idempotent. Use an explicit file in the
+# container so this checks the same setup path without changing a real shell
+# profile.
+profile="$workspace/profile"
+shu shell init posix --path "$profile"
+shu shell init posix --path "$profile"
+test "$(grep -c '^# >>> shu shell integration >>>$' "$profile")" = 1
+grep -q 'pick --path-only' "$profile"
+sh -n "$profile"
+
 # Migration moves a clean working tree atomically into Shu's canonical layout.
 git -C "$workspace/seed" remote set-url origin 'git@github.com:example-org/migrated.git'
 shu --catalog "$workspace/shu.toml" --yes add "$workspace/seed" --migrate
