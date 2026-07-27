@@ -3,7 +3,7 @@
 mod catalog;
 mod doctor;
 mod pick;
-mod restore;
+pub(crate) mod restore;
 mod shell;
 mod upgrade;
 mod view;

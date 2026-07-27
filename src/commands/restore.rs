@@ -92,29 +92,11 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
 pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
     let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
     let index = catalog::select_index(&catalog, &args.selector)?;
-    let repo = &catalog.repos[index];
-    if let Some(existing) = locations::present_path(&catalog, repo)? {
-        if args.path_only {
-            println!("{}", existing.display());
-        } else {
-            println!("Ensured {} at {}", repo_name(repo), existing.display());
-        }
-        return Ok(());
+    let name = repo_name(&catalog.repos[index]).to_owned();
+    let (target, cloned) = materialize(&mut catalog, index)?;
+    if cloned {
+        catalog::save(&catalog_path, &catalog)?;
     }
-    let source = repo.source.clone();
-    let name = repo_name(repo).to_owned();
-    let target = repo_path(&catalog, repo)?;
-    if target.exists() {
-        bail!(
-            "target path exists but is not a valid Git repository: {}",
-            target.display()
-        );
-    }
-    eprintln!("↓ cloning {source}");
-    git::clone(&source, &target)?;
-    let target = absolute(&target)?;
-    remember_new_clone(&mut catalog.repos[index], &target);
-    catalog::save(&catalog_path, &catalog)?;
     if args.path_only {
         println!("{}", target.display());
     } else {
@@ -181,14 +163,21 @@ fn confirm_restore(cli: &Cli, args: &RestoreArgs, count: usize) -> Result<bool> 
 
 /// Clone one missing repository while preserving any existing path conflict.
 fn restore_one(catalog: &mut Catalog, index: usize) -> Result<bool> {
+    let name = repo_name(&catalog.repos[index]).to_owned();
+    let (path, cloned) = materialize(catalog, index)?;
+    if !cloned {
+        println!("✓ {} already present at {}", name, path.display());
+    }
+    Ok(cloned)
+}
+
+/// Return an existing local clone or create Shu's canonical clone and remember it.
+///
+/// The caller owns catalog persistence because batch restore saves only once.
+pub(crate) fn materialize(catalog: &mut Catalog, index: usize) -> Result<(PathBuf, bool)> {
     let repo = &catalog.repos[index];
     if let Some(path) = locations::present_path(catalog, repo)? {
-        println!(
-            "✓ {} already present at {}",
-            repo_name(repo),
-            path.display()
-        );
-        return Ok(false);
+        return Ok((path, false));
     }
     let target = repo_path(catalog, repo)?;
     if target.exists() {
@@ -202,8 +191,8 @@ fn restore_one(catalog: &mut Catalog, index: usize) -> Result<bool> {
         git::clone(&repo.source, &target)?;
         let target = absolute(&target)?;
         remember_new_clone(&mut catalog.repos[index], &target);
+        Ok((target, true))
     }
-    Ok(true)
 }
 
 /// Add a just-created canonical clone to the one catalog file and prefer it if needed.

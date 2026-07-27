@@ -23,7 +23,7 @@ private repository or Gist:
 ```sh
 shu --catalog ./shu.toml init
 shu --catalog ./shu.toml add .
-shu --catalog ./shu.toml add github.com/example-org/useful-project --state reference
+shu --catalog ./shu.toml add github.com/example-org/useful-project --state reference # clones it
 git add shu.toml
 ```
 
@@ -36,7 +36,7 @@ shu restore github.com/your-name/your-repository-library
 Shu reads the repository's root-level `shu.toml`, puts missing repositories
 under `~/shu` by default, and leaves existing repositories alone. `shu add .`
 adds that current clone to the repository's `paths` list in the same catalog,
-so it remains available to `shu`, `shu path`, and `shu ensure` without an
+so it remains available to `shu`, `shu path`, and the picker without an
 unnecessary move. If you start with an empty machine, everyday commands create
 an empty local catalog for you.
 
@@ -70,7 +70,8 @@ shu                     # Pick a present repository and enter it (after shell se
 shu status              # See what is present, missing, or uncatalogued
 shu restore             # Clone catalogued repositories that are missing
 shu doctor              # Check Git, the catalog, and the configured root
-shu ensure my-project   # Ensure one repository exists and print its path
+shu add github.com/you/my-project # Add and clone a repository
+shu clone github.com/you/my-project # Alias for `shu add`
 shu locations my-project # Show every known clone and its Git worktrees
 shu edit my-project --state parked --note "Paused until the next release"
 shu add . --migrate     # Move a clean local repository into ~/shu's layout
@@ -97,7 +98,7 @@ The picker offers repositories that are actually present on this machine,
 including every existing clone recorded with `shu add .` and real Git
 worktrees discovered dynamically from those clones. `--migrate` remains the
 explicit option to move a clean clone into Shu's managed root. If `shu status`
-shows a repository as **missing**, restore it with `shu ensure name` or run
+shows a repository as **missing**, restore it with `shu add <repository>` or run
 `shu add .` from the existing clone to record it.
 
 For scripts and agents:
@@ -132,13 +133,13 @@ primary = "C:/Users/you/Projects/project"
 | Field | Meaning | Default |
 | --- | --- | --- |
 | `version` | Catalog format version. | Required; currently `1`. |
-| `root` | Canonical destination used by `shu restore` and `shu ensure` for a repository that has no usable local clone. | `~/shu` |
+| `root` | Canonical destination used by `shu add`, `shu clone`, and `shu restore` for a repository that has no usable local clone. | `~/shu` |
 | `repos[].source` | Repository identity: `host/namespace/repository`. HTTPS and SSH URLs are normalized to this form by `shu add`. | Required. |
 | `repos[].state` | Your lifecycle label: `active`, `parked`, `reference`, or `archived`. It is never inferred from age. | `active` |
 | `repos[].tags` | Optional labels for filtering and grouping. | `[]` |
 | `repos[].note` | Optional human context about why the repository is kept. | Absent |
 | `repos[].paths` | Every known full clone of the repository. `shu add .` appends the current clone without moving it. | `[]` |
-| `repos[].primary` | The clone Shu prefers for `shu path`, `shu ensure`, and the first picker result. | The first valid path, then the managed path. |
+| `repos[].primary` | The clone Shu prefers for `shu path` and the first picker result. | The first valid path, then the managed path. |
 
 `paths` holds normal full-clone roots. A path that does not exist on the
 current computer is ignored safely, which makes one catalog usable across your
@@ -182,7 +183,7 @@ a conflicting directory.
 
 When `shu status` says a repository is **missing**, Shu cannot find a recorded
 local clone or its canonical destination. It prints the expected path and the
-exact `shu ensure <repository>` command to create it. To update catalog
+exact `shu add <repository>` command to create it. To update catalog
 metadata without changing repository files:
 
 ```sh

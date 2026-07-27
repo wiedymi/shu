@@ -3,16 +3,18 @@
 use std::{
     collections::HashSet,
     fs,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use walkdir::WalkDir;
+use crossterm::terminal;
+use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     catalog::{self, catalog_path},
     cli::{AddArgs, Cli, EditArgs, ScanArgs, SelectorArgs},
+    commands::restore,
     git,
     identity::normalize_identity,
     model::{Catalog, Lifecycle, Repo},
@@ -41,7 +43,7 @@ pub fn init(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-/// Add an identity or the current Git repository to the active catalog.
+/// Add a repository to the active catalog, cloning remote identities when absent.
 pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     let (path, mut catalog) = catalog::load_or_initialize(cli)?;
     if args.migrate {
@@ -59,11 +61,14 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
             println!("  Local clone: {}", local_path.display());
             return Ok(());
         }
-        let existing = &catalog.repos[index];
-        bail!(
-            "{identity} is already in the catalog. To change its state or note, run `shu edit {} --state <state> --note <text>`",
-            catalog::repo_name(existing)
-        );
+        let name = catalog::repo_name(&catalog.repos[index]).to_owned();
+        let (local_path, cloned) = restore::materialize(&mut catalog, index)?;
+        if cloned {
+            catalog::save(&path, &catalog)?;
+        }
+        println!("Already catalogued {name}");
+        println!("  Local clone: {}", local_path.display());
+        return Ok(());
     }
     add_entry(&mut catalog, args, &identity);
     if let Some(local_path) = &local_path {
@@ -72,11 +77,14 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
             local_path,
         )?;
     }
+    let index = catalog.repos.len() - 1;
+    let local_path = match local_path {
+        Some(local_path) => local_path,
+        None => restore::materialize(&mut catalog, index)?.0,
+    };
     catalog::save(&path, &catalog)?;
     println!("Added {identity}");
-    if let Some(local_path) = local_path {
-        println!("  Local clone: {}", local_path.display());
-    }
+    println!("  Local clone: {}", local_path.display());
     Ok(())
 }
 
@@ -301,7 +309,7 @@ fn existing_repo_index(catalog: &Catalog, identity: &str) -> Option<usize> {
         .position(|repo| normalize_identity(&repo.source).ok().as_deref() == Some(identity))
 }
 
-/// Return the mutable catalog entry for an identity that was just ensured to exist.
+/// Return the mutable catalog entry for an identity that was just materialized.
 fn catalog_repo_mut<'a>(catalog: &'a mut Catalog, identity: &str) -> Result<&'a mut Repo> {
     catalog
         .repos
@@ -389,10 +397,42 @@ pub fn scan(cli: &Cli, args: &ScanArgs) -> Result<()> {
         Ok(())
     } else {
         for (path, identity) in found {
-            println!("{identity}\t{}", path.display());
+            let path = path.strip_prefix(&args.directory).unwrap_or(&path);
+            print_scan_result(&identity, &path.display().to_string());
         }
         Ok(())
     }
+}
+
+/// Print one scan result as an identity/path record without terminal wrapping.
+fn print_scan_result(identity: &str, path: &str) {
+    let width = stdout_width();
+    println!(
+        "{}\n  {}",
+        fit_terminal_width(identity, width),
+        fit_terminal_width(path, width.saturating_sub(2))
+    );
+}
+
+/// Preserve complete output for pipes while fitting interactive output to one line.
+fn stdout_width() -> u16 {
+    if io::stdout().is_terminal() {
+        terminal::size().map_or(0, |(width, _)| width)
+    } else {
+        0
+    }
+}
+
+/// Truncate a terminal line by characters, keeping an ellipsis inside its width.
+fn fit_terminal_width(text: &str, width: u16) -> String {
+    let width = usize::from(width);
+    if width == 0 || text.chars().count() <= width {
+        return text.to_owned();
+    }
+    if width == 1 {
+        return "…".to_owned();
+    }
+    format!("{}…", text.chars().take(width - 1).collect::<String>())
 }
 
 /// Update a lifecycle field only; no repository files are touched.
@@ -419,7 +459,7 @@ pub fn forget(cli: &Cli, args: &SelectorArgs) -> Result<()> {
     Ok(())
 }
 
-/// Find repositories with an `origin` remote, ignoring invalid directories.
+/// Find repositories with an `origin` remote outside hidden directory trees.
 pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
     if !root.exists() {
         bail!("scan directory does not exist: {}", root.display());
@@ -428,13 +468,16 @@ pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
     for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| entry.file_name() != ".git")
+        .filter_entry(is_visible_scan_entry)
     {
         let entry = match entry {
             Ok(entry) => entry,
             Err(_) => continue,
         };
-        if !entry.file_type().is_dir() || !entry.path().join(".git").exists() {
+        if !entry.file_type().is_dir()
+            || !entry.path().join(".git").exists()
+            || git::is_shallow(entry.path())
+        {
             continue;
         }
         if let Ok(remote) = git::output(entry.path(), ["remote", "get-url", "origin"])
@@ -445,6 +488,11 @@ pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
     }
     found.sort_by(|left, right| left.1.cmp(&right.1));
     Ok(found)
+}
+
+/// Keep build metadata and other hidden trees out of a predictable repository scan.
+fn is_visible_scan_entry(entry: &DirEntry) -> bool {
+    entry.depth() == 0 || !entry.file_name().to_string_lossy().starts_with('.')
 }
 
 /// Add only identities that are not already in the catalog.

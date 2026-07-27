@@ -170,7 +170,7 @@ pub fn unique(items: Vec<String>) -> Vec<String> {
 
 /// Resolve platform-native application directories.
 fn dirs() -> Result<ProjectDirs> {
-    ProjectDirs::from("dev", "wiedymi", "shu")
+    ProjectDirs::from("com", "wiedymi", "shu")
         .ok_or_else(|| anyhow!("could not determine Shu configuration directory"))
 }
 
@@ -217,6 +217,17 @@ mod tests {
         assert_eq!(
             unique(vec!["work".into(), "rust".into(), "work".into()]),
             ["work", "rust"]
+        );
+    }
+
+    #[test]
+    fn uses_the_com_wiedymi_shu_application_identifier() {
+        assert!(
+            dirs()
+                .unwrap()
+                .config_dir()
+                .to_string_lossy()
+                .contains("com.wiedymi.shu")
         );
     }
 }

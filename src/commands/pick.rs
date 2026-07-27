@@ -21,8 +21,6 @@ use crate::{
     model::Repo,
 };
 
-const MAX_VISIBLE_RESULTS: usize = 12;
-
 /// Interactively select a present local repository with Shu's built-in fuzzy picker.
 pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
@@ -61,18 +59,39 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
 #[derive(Clone, Debug)]
 struct Candidate {
     identity: String,
-    state: String,
+    location: LocationKind,
     path: PathBuf,
+}
+
+/// A location is either an independent clone or a Git-linked worktree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocationKind {
+    Clone,
+    Worktree,
+}
+
+impl LocationKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Clone => "clone",
+            Self::Worktree => "worktree",
+        }
+    }
 }
 
 /// Convert each present clone and Git worktree into a searchable picker candidate.
 fn candidates(catalog: &crate::model::Catalog, repo: &Repo) -> Result<Vec<Candidate>> {
+    let clones = locations::present_paths(catalog, repo)?;
     locations::pickable_paths(catalog, repo).map(|paths| {
         paths
             .into_iter()
             .map(|path| Candidate {
                 identity: repo.source.clone(),
-                state: repo.state.to_string(),
+                location: if clones.contains(&path) {
+                    LocationKind::Clone
+                } else {
+                    LocationKind::Worktree
+                },
                 path,
             })
             .collect()
@@ -167,23 +186,21 @@ fn fuzzy_score(candidate: &str, query: &str) -> Option<usize> {
     let mut previous_index = None;
     let mut query_chars = query.chars().flat_map(char::to_lowercase);
     let mut wanted = query_chars.next()?;
+    let mut previous_character = None;
     for (index, character) in candidate.chars().flat_map(char::to_lowercase).enumerate() {
         if character != wanted {
+            previous_character = Some(character);
             continue;
         }
         score += 10;
         if previous_index.is_some_and(|previous| index == previous + 1) {
             score += 8;
         }
-        if index == 0
-            || matches!(
-                candidate.as_bytes().get(index.saturating_sub(1)),
-                Some(b'/' | b'-' | b'_' | b'.')
-            )
-        {
+        if index == 0 || matches!(previous_character, Some('/' | '-' | '_' | '.')) {
             score += 4;
         }
         previous_index = Some(index);
+        previous_character = Some(character);
         match query_chars.next() {
             Some(next) => wanted = next,
             None => return Some(score),
@@ -208,33 +225,81 @@ impl PickerTerminal {
         Ok(Self { stderr })
     }
 
-    /// Redraw the compact picker UI while keeping output bounded to the terminal.
+    /// Redraw the result list above a single bottom-aligned search prompt.
     fn render(&mut self, query: &str, candidates: &[Candidate], selected: usize) -> Result<()> {
-        let visible = usize::from(terminal::size()?.1)
-            .saturating_sub(4)
-            .min(MAX_VISIBLE_RESULTS);
+        let (width, height) = terminal::size()?;
+        let visible = usize::from(height.saturating_sub(1));
         execute!(self.stderr, MoveTo(0, 0), Clear(ClearType::All))?;
-        writeln!(
-            self.stderr,
-            "Shu repositories  type to search · ↑↓ select · Enter open · Esc cancel"
-        )?;
-        writeln!(self.stderr, "› {query}")?;
         if candidates.is_empty() {
-            writeln!(self.stderr, "  No matching local repositories")?;
+            writeln!(self.stderr, "No matching local repositories")?;
         }
-        for (index, candidate) in candidates.iter().take(visible).enumerate() {
-            let marker = if index == selected { "›" } else { " " };
+        let first_visible = selected.saturating_sub(visible.saturating_sub(1));
+        for (index, candidate) in candidates
+            .iter()
+            .skip(first_visible)
+            .take(visible)
+            .enumerate()
+        {
+            let marker = if first_visible + index == selected {
+                "›"
+            } else {
+                " "
+            };
+            let row = format!(
+                "[{}] {}",
+                candidate.location.label(),
+                candidate.path.display()
+            );
             writeln!(
                 self.stderr,
-                "{marker} {:<36} {:<10} {}",
-                candidate.identity,
-                candidate.state,
-                candidate.path.display()
+                "{marker} {}",
+                fit_to_width(&row, width.saturating_sub(2))
             )?;
         }
+        execute!(self.stderr, MoveTo(0, height.saturating_sub(1)))?;
+        write!(
+            self.stderr,
+            "› {}",
+            tail_to_width(query, width.saturating_sub(2))
+        )?;
         self.stderr.flush()?;
         Ok(())
     }
+}
+
+/// Keep each row inside the terminal instead of letting long paths wrap.
+fn fit_to_width(text: &str, width: u16) -> String {
+    let width = usize::from(width);
+    let length = text.chars().count();
+    if length <= width {
+        return text.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    if width == 1 {
+        return "…".to_owned();
+    }
+    format!("{}…", text.chars().take(width - 1).collect::<String>())
+}
+
+/// Show the active end of a long query, where newly typed text appears.
+fn tail_to_width(text: &str, width: u16) -> String {
+    let width = usize::from(width);
+    let length = text.chars().count();
+    if length <= width {
+        return text.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    if width == 1 {
+        return "…".to_owned();
+    }
+    format!(
+        "…{}",
+        text.chars().skip(length - width + 1).collect::<String>()
+    )
 }
 
 impl Drop for PickerTerminal {
@@ -256,5 +321,17 @@ mod tests {
             fuzzy_score("github.com/example-org/api", "api").unwrap()
                 > fuzzy_score("github.com/example-org/api", "ai").unwrap()
         );
+    }
+
+    #[test]
+    fn picker_rows_stay_on_one_line_and_keep_the_active_query_visible() {
+        assert_eq!(fit_to_width("/repositories/example", 8), "/reposi…");
+        assert_eq!(tail_to_width("repository", 5), "…tory");
+    }
+
+    #[test]
+    fn locations_have_clear_distinct_labels() {
+        assert_eq!(LocationKind::Clone.label(), "clone");
+        assert_eq!(LocationKind::Worktree.label(), "worktree");
     }
 }

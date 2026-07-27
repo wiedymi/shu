@@ -17,6 +17,11 @@ pub fn is_repo(path: &Path) -> bool {
     output(path, ["rev-parse", "--is-inside-work-tree"]).is_ok_and(|value| value == "true")
 }
 
+/// Return whether Git identifies this working tree as a shallow clone.
+pub fn is_shallow(path: &Path) -> bool {
+    output(path, ["rev-parse", "--is-shallow-repository"]).is_ok_and(|value| value == "true")
+}
+
 /// Resolve a local path inside a Git working tree to its top-level directory.
 pub fn worktree_root(path: &Path) -> Result<PathBuf> {
     if !is_repo(path) {

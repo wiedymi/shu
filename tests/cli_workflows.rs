@@ -206,6 +206,75 @@ fn picks_a_local_repository_without_an_external_fuzzy_finder() {
 }
 
 #[test]
+fn add_and_its_clone_alias_catalogue_and_clone_a_remote_repository() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let expected = fixture
+        .root
+        .join("github.com")
+        .join("example-org")
+        .join("api");
+
+    let added = fixture.shu(["--catalog", catalog.to_str().unwrap(), "add", IDENTITY]);
+    added.assert_success();
+    assert!(expected.join(".git").exists());
+
+    let cloned = fixture.shu(["--catalog", catalog.to_str().unwrap(), "clone", IDENTITY]);
+    cloned.assert_success();
+    assert!(
+        String::from_utf8(cloned.stdout)
+            .unwrap()
+            .contains("Already catalogued")
+    );
+}
+
+#[test]
+fn scan_skips_hidden_directories_and_groups_each_result() {
+    let fixture = Fixture::new();
+    let scan_root = fixture.temp.path().join("scan-root");
+    let visible = scan_root.join("visible");
+    let hidden = scan_root.join(".build").join("checkouts").join("hidden");
+    let shallow = scan_root.join("shallow");
+    fs::create_dir_all(&scan_root).unwrap();
+    fs::create_dir_all(hidden.parent().unwrap()).unwrap();
+    run_git(
+        &scan_root,
+        ["clone", fixture.seed.to_str().unwrap()],
+        Some(&visible),
+    );
+    run_git(
+        &scan_root,
+        ["clone", fixture.seed.to_str().unwrap()],
+        Some(&hidden),
+    );
+    let shallow_source = format!("file://{}", fixture.seed.display());
+    run_git(
+        &scan_root,
+        ["clone", "--depth", "1", &shallow_source],
+        Some(&shallow),
+    );
+    for repository in [&visible, &hidden, &shallow] {
+        run_git(
+            repository,
+            [
+                "remote",
+                "set-url",
+                "origin",
+                "git@github.com:example-org/api.git",
+            ],
+            None,
+        );
+    }
+
+    let scanned = fixture.shu(["scan", scan_root.to_str().unwrap()]);
+    scanned.assert_success();
+    let output = String::from_utf8(scanned.stdout).unwrap();
+    assert!(output.contains("github.com/example-org/api\n  visible"));
+    assert!(!output.contains(".build"));
+    assert!(!output.contains("shallow"));
+}
+
+#[test]
 fn emits_navigation_wrappers_for_supported_shells() {
     for shell in [
         "bash",

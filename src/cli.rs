@@ -13,7 +13,7 @@ use crate::model::Lifecycle;
     version,
     about = "A tiny, declarative, agent-friendly repository library",
     long_about = "Shu keeps one readable catalog of Git repositories, restores missing clones into predictable paths, and lets people and agents resolve repositories reliably.",
-    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu add . --migrate --dry-run\n  shu locations api\n  shu restore github.com/your-account/repository-library\n  shu ensure api --path-only"
+    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu clone github.com/example-org/api\n  shu add . --migrate --dry-run\n  shu locations api\n  shu restore github.com/your-account/repository-library\n  shu path api"
 )]
 pub struct Cli {
     /// Use a specific catalog rather than the active catalog.
@@ -51,7 +51,8 @@ pub struct Cli {
 pub enum Commands {
     /// Create an empty catalog at the active catalog location.
     Init,
-    /// Add a repository identity or the current Git repository to the catalog.
+    /// Add a repository to the catalog, cloning remote identities when needed.
+    #[command(visible_alias = "clone")]
     Add(AddArgs),
     /// Change repository metadata such as its lifecycle state or note.
     Edit(EditArgs),
@@ -90,13 +91,13 @@ pub enum Commands {
     Shell(ShellArgs),
 }
 
-/// Arguments for `shu add`.
+/// Arguments for `shu add` and its `shu clone` alias.
 #[derive(Args)]
 pub struct AddArgs {
-    /// A normalized repository identity, Git URL, or `.` for the current repository.
+    /// A repository identity, Git URL, or `.` for the current repository.
     ///
-    /// Local clones are recorded in the repository's `paths` list without
-    /// moving them; add `--migrate` to move a clean clone into Shu's managed root.
+    /// Remote identities are cloned into Shu's managed root. Local clones are
+    /// recorded without moving them; add `--migrate` to move one into that root.
     #[arg(value_name = "REPOSITORY")]
     pub source: String,
     /// Lifecycle state to record in the catalog.

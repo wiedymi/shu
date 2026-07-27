@@ -7,6 +7,23 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-07-28
+
+### Added
+
+- `shu add <repository>` now clones a missing remote repository into Shu's
+  managed library. `shu clone` is a direct alias for the same workflow.
+- The picker distinguishes independent clones from linked Git worktrees before
+  selection.
+
+### Changed
+
+- The picker now presents a viewport-sized result list above its bottom search
+  prompt, without wrapped detail columns.
+- `shu scan` skips hidden directory trees and shallow clones, and groups each
+  result's identity and path into a readable record.
+- Default application support now uses the `com.wiedymi.shu` identifier.
+
 ## [0.1.9] - 2026-07-27
 
 ### Added
@@ -161,7 +178,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/wiedymi/shu/compare/v0.1.9...v0.1.10
 [0.1.6]: https://github.com/wiedymi/shu/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/wiedymi/shu/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/wiedymi/shu/compare/v0.1.3...v0.1.4
