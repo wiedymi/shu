@@ -211,6 +211,26 @@ shu update              # Refresh the saved catalog source and restore missing r
 shu upgrade             # Install the latest verified Shu release
 ```
 
+## Syncing a private catalog
+
+Shu does not create repositories or manage credentials. Create a private Git
+repository with your preferred provider, commit a `shu.toml` to it, then make
+it the active source once:
+
+```sh
+shu restore git@github.com:you/shu-catalog.git
+```
+
+After changing the local catalog, publish it with:
+
+```sh
+shu sync
+```
+
+`sync` uses your existing Git credentials. It refuses to push if the remote
+catalog changed since the last `restore`; run `shu restore` again to review the
+remote version. It never stores credentials, force-pushes, or merges changes.
+
 If a clone or release download is unavailable, Shu reports what failed and
 suggests checking the path, network connection, or Git access. It does not try
 to manage your credentials.

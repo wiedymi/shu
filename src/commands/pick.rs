@@ -11,6 +11,7 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
+    style::{Attribute, SetAttribute},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
@@ -32,7 +33,7 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         bail!(
-            "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu ensure <repository>` to clone one, or run `shu add .` from an existing clone to record it"
+            "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu add <repository>` to clone one, or run `shu add .` from an existing clone to record it"
         );
     }
 
@@ -227,44 +228,68 @@ impl PickerTerminal {
 
     /// Redraw the result list above a single bottom-aligned search prompt.
     fn render(&mut self, query: &str, candidates: &[Candidate], selected: usize) -> Result<()> {
-        let (width, height) = terminal::size()?;
+        let (width, height) = terminal_size()?;
         let visible = usize::from(height.saturating_sub(1));
         execute!(self.stderr, MoveTo(0, 0), Clear(ClearType::All))?;
-        if candidates.is_empty() {
-            writeln!(self.stderr, "No matching local repositories")?;
-        }
         let first_visible = selected.saturating_sub(visible.saturating_sub(1));
-        for (index, candidate) in candidates
+        let visible_candidates = candidates
             .iter()
             .skip(first_visible)
             .take(visible)
-            .enumerate()
-        {
-            let marker = if first_visible + index == selected {
-                "›"
-            } else {
-                " "
-            };
+            .collect::<Vec<_>>();
+        let first_row = height
+            .saturating_sub(1)
+            .saturating_sub(visible_candidates.len() as u16);
+        for (index, candidate) in visible_candidates.into_iter().enumerate() {
             let row = format!(
                 "[{}] {}",
                 candidate.location.label(),
                 candidate.path.display()
             );
-            writeln!(
+            execute!(
                 self.stderr,
-                "{marker} {}",
-                fit_to_width(&row, width.saturating_sub(2))
+                MoveTo(0, first_row + index as u16),
+                Clear(ClearType::CurrentLine)
             )?;
+            if first_visible + index == selected {
+                execute!(self.stderr, SetAttribute(Attribute::Reverse))?;
+                write!(
+                    self.stderr,
+                    "› {}",
+                    fit_to_width(&row, width.saturating_sub(2))
+                )?;
+                execute!(self.stderr, SetAttribute(Attribute::Reset))?;
+            } else {
+                write!(
+                    self.stderr,
+                    "  {}",
+                    fit_to_width(&row, width.saturating_sub(2))
+                )?;
+            }
         }
-        execute!(self.stderr, MoveTo(0, height.saturating_sub(1)))?;
+        execute!(
+            self.stderr,
+            MoveTo(0, height.saturating_sub(1)),
+            Clear(ClearType::CurrentLine),
+            SetAttribute(Attribute::Reverse)
+        )?;
         write!(
             self.stderr,
             "› {}",
             tail_to_width(query, width.saturating_sub(2))
         )?;
+        execute!(self.stderr, SetAttribute(Attribute::Reset))?;
         self.stderr.flush()?;
         Ok(())
     }
+}
+
+/// Return a usable screen size even when a terminal reports a transient zero size.
+fn terminal_size() -> Result<(u16, u16)> {
+    Ok(match terminal::size()? {
+        (0, _) | (_, 0) => (80, 24),
+        size => size,
+    })
 }
 
 /// Keep each row inside the terminal instead of letting long paths wrap.

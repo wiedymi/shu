@@ -7,6 +7,23 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-07-28
+
+### Added
+
+- `shu sync` safely publishes catalog changes to the Git repository configured
+  by `shu restore`, using the user's existing Git credentials.
+
+### Changed
+
+- The picker keeps its highlighted query at the bottom and anchors results
+  directly above it for compact, fzf-style navigation.
+
+### Security
+
+- Sync refuses a remote catalog changed since the last restore and never
+  merges, force-pushes, or stores credentials.
+
 ## [0.1.10] - 2026-07-28
 
 ### Added
@@ -178,7 +195,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/wiedymi/shu/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wiedymi/shu/compare/v0.1.9...v0.1.10
 [0.1.6]: https://github.com/wiedymi/shu/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/wiedymi/shu/compare/v0.1.4...v0.1.5

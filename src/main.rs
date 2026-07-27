@@ -58,6 +58,7 @@ fn run() -> Result<()> {
         Some(Commands::Doctor(args)) => commands::doctor(&cli, args),
         Some(Commands::Status(filter)) => commands::status(&cli, filter),
         Some(Commands::Restore(args)) => commands::restore(&cli, args),
+        Some(Commands::Sync) => commands::sync(&cli),
         Some(Commands::Update(args)) => commands::update(&cli, args),
         Some(Commands::Upgrade(args)) => commands::upgrade(args),
         Some(Commands::Ensure(args)) => commands::ensure(&cli, args),

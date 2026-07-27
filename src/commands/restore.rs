@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     catalog::{self, catalog_path, repo_name},
@@ -88,6 +88,79 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     )
 }
 
+/// Safely commit and push the active catalog to the Git source last restored.
+pub fn sync(cli: &Cli) -> Result<()> {
+    let (catalog_file, _) = catalog::load(cli)?;
+    let origin_file = catalog::origin_path(cli)?;
+    if !origin_file.exists() {
+        bail!(
+            "no Git catalog source is configured. Create a private Git repository containing shu.toml, then run `shu restore <repository-url>` before `shu sync`"
+        );
+    }
+    let mut origin: Origin = serde_json::from_slice(&fs::read(&origin_file)?)
+        .context("could not read catalog source metadata")?;
+    let baseline = origin.revision.clone().ok_or_else(|| {
+        anyhow!(
+            "catalog source has no restore revision. Run `shu restore {}` once before syncing",
+            origin.source
+        )
+    })?;
+    let remote = sources::repository_remote(&origin.source)?.ok_or_else(|| {
+        anyhow!(
+            "catalog source is read-only. `shu sync` requires a Git repository source configured with `shu restore <repository-url>`"
+        )
+    })?;
+    let filename = sync_filename(&origin)?;
+    let workspace = tempfile::tempdir().context("could not create temporary sync workspace")?;
+    let checkout = workspace.path().join("catalog");
+    git::clone_remote(&remote, &checkout, origin.git_ref.as_deref())?;
+    let remote_revision = git::output(&checkout, ["rev-parse", "HEAD"])?;
+    if remote_revision != baseline {
+        bail!(
+            "catalog source changed since the last restore. Run `shu restore {}` to review the remote catalog before syncing",
+            origin.source
+        );
+    }
+    let remote_catalog = checkout.join(&filename);
+    if !remote_catalog.is_file() {
+        bail!(
+            "catalog file {} is missing from the remote source",
+            filename.display()
+        );
+    }
+    let local_content = fs::read_to_string(&catalog_file)?;
+    if fs::read_to_string(&remote_catalog)? == local_content {
+        println!("Catalog is already synced.");
+        return Ok(());
+    }
+    fs::write(&remote_catalog, local_content)?;
+    let filename = filename
+        .to_str()
+        .ok_or_else(|| anyhow!("catalog filename is not valid UTF-8"))?;
+    git::output(&checkout, ["add", "--", filename])?;
+    git::output(&checkout, ["commit", "-m", "Sync Shu catalog"])?;
+    let branch = git::output(&checkout, ["symbolic-ref", "--short", "HEAD"])
+        .context("catalog source must use a branch, not a detached ref")?;
+    git::output(&checkout, ["push", "origin", &branch])?;
+    origin.revision = Some(git::output(&checkout, ["rev-parse", "HEAD"])?);
+    fs::write(&origin_file, serde_json::to_vec_pretty(&origin)?)?;
+    println!("Synced catalog to {}.", origin.source);
+    Ok(())
+}
+
+/// Validate the catalog path stored in the source before writing inside a clone.
+fn sync_filename(origin: &Origin) -> Result<PathBuf> {
+    let file = PathBuf::from(origin.file.as_deref().unwrap_or("shu.toml"));
+    if file.is_absolute()
+        || file
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        bail!("catalog source contains an unsafe catalog filename");
+    }
+    Ok(file)
+}
+
 /// Ensure one selected repository exists and print its absolute local path.
 pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
     let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
@@ -131,6 +204,7 @@ fn activate_source(cli: &Cli, args: &RestoreArgs, source: &str) -> Result<()> {
         source: source.to_owned(),
         file: args.file.as_ref().map(|file| file.display().to_string()),
         git_ref: args.git_ref.clone(),
+        revision: sources::repository_revision(source)?,
     };
     let path = catalog::origin_path(cli)?;
     fs::create_dir_all(path.parent().expect("origin path always has a parent"))?;

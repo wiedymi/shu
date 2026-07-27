@@ -106,6 +106,9 @@ pub struct Origin {
     pub file: Option<String>,
     /// Optional Git ref used to resolve the source.
     pub git_ref: Option<String>,
+    /// Git commit observed by the most recent restore, used to prevent sync overwrite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

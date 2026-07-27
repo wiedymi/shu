@@ -26,6 +26,46 @@ pub fn resolve(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Resu
     fetch_repository(source, file, git_ref)
 }
 
+/// Return the current Git revision for a source resolved as a repository.
+pub fn repository_revision(source: &str) -> Result<Option<String>> {
+    if !is_repository_source(source) {
+        return Ok(None);
+    }
+    let key = sha256_hex(source.as_bytes());
+    let cache = state_dir()?.join("catalogs").join(&key[..16]);
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&cache)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .with_context(|| format!("could not read catalog revision for {source}"))?;
+    if !output.status.success() {
+        bail!("could not read catalog revision for {source}");
+    }
+    Ok(Some(String::from_utf8(output.stdout)?.trim().to_owned()))
+}
+
+/// Return the transport URL used for a Git-backed catalog source.
+pub fn repository_remote(source: &str) -> Result<Option<String>> {
+    if !is_repository_source(source) {
+        return Ok(None);
+    }
+    let identity = normalize_identity(source)?;
+    Ok(Some(
+        if source.contains("://") || source.starts_with("git@") {
+            source.to_owned()
+        } else {
+            format!("https://{identity}.git")
+        },
+    ))
+}
+
+fn is_repository_source(source: &str) -> bool {
+    !Path::new(source).is_file()
+        && (!source.starts_with("http://") && !source.starts_with("https://")
+            || (!source.ends_with(".toml") && !source.contains("gist.github.com/")))
+}
+
 /// Fetch a Git-backed catalog into Shu-owned cache state and read its TOML file.
 fn fetch_repository(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Result<String> {
     let identity = normalize_identity(source)?;

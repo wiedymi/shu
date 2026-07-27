@@ -127,3 +127,25 @@ pub fn clone(identity: &str, target: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+/// Clone a catalog remote with the user's existing Git credentials.
+pub fn clone_remote(remote: &str, target: &Path, git_ref: Option<&str>) -> Result<()> {
+    let mut command = Command::new("git");
+    command.arg("clone");
+    if let Some(git_ref) = git_ref {
+        command.args(["--branch", git_ref]);
+    }
+    let output = command
+        .arg(remote)
+        .arg(target)
+        .stdin(Stdio::null())
+        .output()
+        .context("could not clone catalog source")?;
+    if !output.status.success() {
+        bail!(
+            "could not clone catalog source: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
