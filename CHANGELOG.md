@@ -7,6 +7,31 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-27
+
+### Added
+
+- `shu edit <repository>` for changing a catalog entry's lifecycle state and
+  note without touching repository files.
+- `pwsh` as an alias for `shu shell init powershell`.
+
+### Changed
+
+- Create an empty catalog automatically for everyday commands instead of
+  blocking first use on `shu init`.
+- Make `shu status` explain a missing repository's expected path and the exact
+  `shu ensure` command that restores it.
+- Render human errors consistently with a colored heading, an optional cause,
+  and a help line when attached to a terminal.
+- Refactor repository identity parsing into small, documented parsing and
+  validation steps.
+
+### Fixed
+
+- Document and test the PowerShell setup expression so generated shell code is
+  evaluated as one script rather than an array of output lines.
+- Explain the common `shu update . --state ...` mix-up and point to `shu edit`.
+
 ## [0.1.2] - 2026-07-27
 
 ### Fixed
@@ -58,7 +83,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/wiedymi/shu/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/wiedymi/shu/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/wiedymi/shu/compare/v0.1.0...v0.1.1
 [0.1.0-rc.3]: https://github.com/wiedymi/shu/compare/v0.1.0-rc.2...v0.1.0-rc.3

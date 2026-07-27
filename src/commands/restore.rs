@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     catalog::{self, catalog_path, repo_name},
-    cli::{Cli, EnsureArgs, FilterArgs, RestoreArgs, SelectorArgs},
+    cli::{Cli, EnsureArgs, FilterArgs, RestoreArgs, SelectorArgs, UpdateArgs},
     git,
     model::{Catalog, Origin},
     paths::{absolute, repo_path, root_path},
@@ -22,7 +22,7 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
     if let Some(source) = &args.source {
         activate_source(cli, args, source)?;
     }
-    let (_, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repos = catalog::filtered(&catalog, &args.filter).collect::<Vec<_>>();
     if !confirm_restore(cli, args, repos.len())? {
         println!("No changes made.");
@@ -45,7 +45,13 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
 }
 
 /// Refresh the remembered remote source, then restore the refreshed catalog.
-pub fn update(cli: &Cli) -> Result<()> {
+pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
+    if args.selector.is_some() || args.state.is_some() || args.note.is_some() {
+        let selector = args.selector.as_deref().unwrap_or("<repository>");
+        bail!(
+            "`shu update` refreshes the saved catalog source; it does not edit a repository. Use `shu edit {selector} --state <state> --note <text>` instead"
+        );
+    }
     let origin: Origin = serde_json::from_slice(
         &fs::read(catalog::origin_path(cli)?)
             .context("no saved catalog source; run `shu restore <source>` first")?,
@@ -63,7 +69,7 @@ pub fn update(cli: &Cli) -> Result<()> {
 
 /// Ensure one selected repository exists and print its absolute canonical path.
 pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
-    let (_, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repo = catalog::select(&catalog, &args.selector)?;
     let target = repo_path(&catalog, repo)?;
     if !git::is_repo(&target) {
@@ -87,7 +93,7 @@ pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
 
 /// Print a selected repository's path only when it already exists locally.
 pub fn path_command(cli: &Cli, args: &SelectorArgs) -> Result<()> {
-    let (_, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repo = catalog::select(&catalog, &args.selector)?;
     let target = repo_path(&catalog, repo)?;
     if !git::is_repo(&target) {

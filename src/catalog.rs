@@ -58,6 +58,26 @@ pub fn load(cli: &Cli) -> Result<(PathBuf, Catalog)> {
     Ok((path, catalog))
 }
 
+/// Load the active catalog, creating an empty one when it has not been set up yet.
+///
+/// This is used by everyday commands so a first run feels ready immediately.
+/// Diagnostic commands keep using [`load`] so they can report a missing catalog
+/// without changing the machine.
+pub fn load_or_initialize(cli: &Cli) -> Result<(PathBuf, Catalog)> {
+    let path = catalog_path(cli)?;
+    if !path.exists() {
+        save(
+            &path,
+            &Catalog {
+                version: 1,
+                root: crate::model::default_root(),
+                repos: vec![],
+            },
+        )?;
+    }
+    load(cli)
+}
+
 /// Serialize a catalog to TOML, creating its parent directory when necessary.
 pub fn save(path: &Path, catalog: &Catalog) -> Result<()> {
     let parent = path

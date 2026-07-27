@@ -15,13 +15,14 @@ use crate::{
     identity::normalize_identity,
     model::{Catalog, ListOutput, Repo, RepoOutput},
     paths::{absolute, repo_path, root_path},
+    ui,
 };
 
 use super::catalog::discover_repos;
 
 /// Compare declared catalog state against repositories detected locally.
 pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
-    let (_, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repos = catalog::filtered(&catalog, filter).collect::<Vec<_>>();
     if cli.json {
         return print_json(&catalog, repos);
@@ -34,7 +35,7 @@ pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
 
 /// List filtered entries in a compact one-line format or as JSON.
 pub fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
-    let (_, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load_or_initialize(cli)?;
     let max_age = args.stale.as_deref().map(parse_duration).transpose()?;
     let repos = catalog::filtered(&catalog, &args.filter)
         .filter(|repo| {
@@ -102,17 +103,45 @@ fn print_json(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
 
 /// Print lifecycle sections and local state for each selected repository.
 fn print_grouped_status(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
+    if repos.is_empty() {
+        println!("No repositories are catalogued yet.");
+        println!("  Add the current repository:  shu add .");
+        println!("  Restore a saved library:     shu restore <source>");
+        return Ok(());
+    }
+
     let mut current = None;
     for repo in repos {
         if current != Some(repo.state) {
             current = Some(repo.state);
             println!("{}", repo.state.to_string().to_uppercase());
         }
-        println!(
-            "  {:<18} {}",
-            repo_name(repo),
-            observed_state(catalog, repo)?
-        );
+        print_repository_status(catalog, repo)?;
+    }
+    println!("\nEdit metadata: shu edit <repository> --state <state> --note <text>");
+    Ok(())
+}
+
+/// Print one status entry with the expected path and next action when missing.
+fn print_repository_status(catalog: &Catalog, repo: &Repo) -> Result<()> {
+    let observed = observed_state(catalog, repo)?;
+    let marker = match observed.as_str() {
+        value if value.starts_with("present") => ui::success_marker(),
+        "missing" => ui::warning_marker(),
+        _ => ui::failure_marker(),
+    };
+    println!("  {marker} {:<18} {observed}", repo_name(repo));
+
+    if observed == "missing" {
+        let path = absolute(&repo_path(catalog, repo)?)?;
+        println!("    Expected: {}", path.display());
+        println!("    Clone:    shu ensure {}", repo_name(repo));
+    }
+    if let Some(note) = &repo.note {
+        println!("    Note:     {note}");
+    }
+    if !repo.tags.is_empty() {
+        println!("    Tags:     {}", repo.tags.join(", "));
     }
     Ok(())
 }

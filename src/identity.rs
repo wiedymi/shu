@@ -1,44 +1,112 @@
-//! Normalization for common HTTPS and SSH Git remote formats.
+//! Normalization for the Git remote formats Shu accepts.
 
 use anyhow::{Context, Result, anyhow, bail};
 
-/// Normalize a common Git remote form into `host/namespace/repository`.
+/// Normalize a Git remote or shorthand into `host/namespace/repository`.
 ///
-/// HTTPS, SSH URL, SCP-style SSH, and already-normalized forms are accepted.
-/// Transport-specific syntax and a final `.git` suffix are removed.
+/// HTTPS URLs, SSH URLs, SCP-style SSH remotes, and already-normalized values
+/// are accepted. Transport syntax and a final `.git` suffix are removed.
 pub fn normalize_identity(input: &str) -> Result<String> {
-    let raw = input.trim().trim_end_matches('/').trim_end_matches(".git");
-    let (host, path) = if let Some(rest) = raw.strip_prefix("git@") {
-        let (host, path) = rest
-            .split_once(':')
-            .ok_or_else(|| anyhow!("invalid SSH Git URL: {input}"))?;
-        (host.to_owned(), path.to_owned())
-    } else if raw.contains("://") {
-        let url = url::Url::parse(raw).with_context(|| format!("invalid URL: {input}"))?;
-        (
-            url.host_str()
-                .ok_or_else(|| anyhow!("Git URL has no host: {input}"))?
-                .to_owned(),
-            url.path().trim_matches('/').to_owned(),
-        )
-    } else {
-        let parts = raw.trim_matches('/').split('/').collect::<Vec<_>>();
-        if parts.len() < 3 {
-            bail!("repository identity must be host/namespace/repository: {input}");
-        }
-        (parts[0].to_owned(), parts[1..].join("/"))
-    };
-    let path = path.trim_matches('/').trim_end_matches(".git");
-    let valid_host =
-        !host.is_empty() && !host.contains(['/', '\\']) && host.split('.').all(valid_component);
-    let path_parts = path.split('/').collect::<Vec<_>>();
-    if !valid_host || path_parts.len() < 2 || !path_parts.iter().all(|part| valid_component(part)) {
-        bail!("invalid repository identity: {input}");
-    }
-    Ok(format!("{}/{}", host.to_ascii_lowercase(), path))
+    let raw = trim_remote_suffix(input);
+    let identity = parse_identity(raw, input)?;
+    validate_identity(&identity, input)?;
+    Ok(identity.render())
 }
 
-/// Return whether one host or repository-path component is safe to place in a path.
+/// The host and repository path extracted from one supported remote format.
+struct ParsedIdentity {
+    /// Remote host, before lowercasing for canonical output.
+    host: String,
+    /// Namespace and repository components, without transport syntax.
+    path: String,
+}
+
+impl ParsedIdentity {
+    /// Render this parsed value in Shu's canonical identity format.
+    fn render(self) -> String {
+        format!("{}/{}", self.host.to_ascii_lowercase(), self.path)
+    }
+}
+
+/// Remove whitespace, a trailing slash, and one conventional Git suffix.
+fn trim_remote_suffix(input: &str) -> &str {
+    input.trim().trim_end_matches('/').trim_end_matches(".git")
+}
+
+/// Parse one of Shu's supported remote forms into host and repository path.
+fn parse_identity(raw: &str, original: &str) -> Result<ParsedIdentity> {
+    if let Some(remote) = raw.strip_prefix("git@") {
+        parse_scp_remote(remote, original)
+    } else if raw.contains("://") {
+        parse_url_remote(raw, original)
+    } else {
+        parse_shorthand(raw, original)
+    }
+}
+
+/// Parse a Git SCP-style remote such as `git@github.com:owner/project`.
+fn parse_scp_remote(remote: &str, original: &str) -> Result<ParsedIdentity> {
+    let (host, path) = remote
+        .split_once(':')
+        .ok_or_else(|| anyhow!("invalid SSH Git URL: {original}"))?;
+    Ok(ParsedIdentity {
+        host: host.to_owned(),
+        path: path.trim_matches('/').trim_end_matches(".git").to_owned(),
+    })
+}
+
+/// Parse a standard URL such as `https://github.com/owner/project`.
+fn parse_url_remote(raw: &str, original: &str) -> Result<ParsedIdentity> {
+    let url = url::Url::parse(raw).with_context(|| format!("invalid URL: {original}"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("Git URL has no host: {original}"))?;
+    Ok(ParsedIdentity {
+        host: host.to_owned(),
+        path: url
+            .path()
+            .trim_matches('/')
+            .trim_end_matches(".git")
+            .to_owned(),
+    })
+}
+
+/// Parse the plain `host/namespace/repository` form used in catalogs.
+fn parse_shorthand(raw: &str, original: &str) -> Result<ParsedIdentity> {
+    let (host, path) = raw.trim_matches('/').split_once('/').ok_or_else(|| {
+        anyhow!("repository identity must be host/namespace/repository: {original}")
+    })?;
+    if !path.contains('/') {
+        bail!("repository identity must be host/namespace/repository: {original}");
+    }
+    Ok(ParsedIdentity {
+        host: host.to_owned(),
+        path: path.trim_matches('/').trim_end_matches(".git").to_owned(),
+    })
+}
+
+/// Reject incomplete or path-unsafe parsed identities before they reach the filesystem.
+fn validate_identity(identity: &ParsedIdentity, original: &str) -> Result<()> {
+    if !valid_host(&identity.host) || !valid_repository_path(&identity.path) {
+        bail!("invalid repository identity: {original}");
+    }
+    Ok(())
+}
+
+/// Return whether a host is non-empty, path-free, and made of safe labels.
+fn valid_host(host: &str) -> bool {
+    !host.is_empty() && !host.contains(['/', '\\']) && host.split('.').all(valid_component)
+}
+
+/// Return whether a repository path contains at least namespace and repository components.
+fn valid_repository_path(path: &str) -> bool {
+    let mut parts = path.split('/');
+    parts.next().is_some_and(valid_component)
+        && parts.next().is_some_and(valid_component)
+        && parts.all(valid_component)
+}
+
+/// Return whether a single identity component is safe to use below the repository root.
 fn valid_component(value: &str) -> bool {
     !value.is_empty() && value != "." && value != ".." && !value.contains('\\')
 }
@@ -46,6 +114,7 @@ fn valid_component(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn normalizes_common_remote_forms() {
         for value in [
@@ -60,6 +129,7 @@ mod tests {
             );
         }
     }
+
     #[test]
     fn rejects_short_identity() {
         assert!(normalize_identity("acme/widgets").is_err());

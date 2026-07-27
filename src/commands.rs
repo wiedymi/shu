@@ -8,7 +8,7 @@ mod shell;
 mod upgrade;
 mod view;
 
-pub use catalog::{add, change_state, forget, init, scan};
+pub use catalog::{add, change_state, edit, forget, init, scan};
 pub use doctor::doctor;
 pub use pick::pick;
 pub use restore::{ensure, path_command, restore, update};
