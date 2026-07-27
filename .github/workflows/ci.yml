@@ -33,4 +33,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build --tag shu:test .
-      - run: docker run --rm --entrypoint /bin/sh -v "${{ github.workspace }}/tests/docker:/tests:ro" -v "${{ github.workspace }}/scripts:/scripts:ro" shu:test /tests/e2e.sh
+      - |
+          docker run --rm --entrypoint /bin/sh \
+            -v "$GITHUB_WORKSPACE/tests/docker:/tests:ro" \
+            -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+            shu:test /tests/e2e.sh
