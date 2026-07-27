@@ -57,11 +57,25 @@ pub fn is_clean(path: &Path) -> Result<bool> {
 
 /// Return whether Git reports another linked working tree for this repository.
 pub fn has_linked_worktrees(path: &Path) -> Result<bool> {
-    let count = output(path, ["worktree", "list", "--porcelain"])?
+    Ok(worktrees(path)?.len() > 1)
+}
+
+/// Return every working-tree path Git associates with a local repository.
+///
+/// The first entry is normally the main working tree and later entries are
+/// linked worktrees. Paths are read from Git each time so Shu never stores
+/// worktree state in `shu.toml`.
+pub fn worktrees(path: &Path) -> Result<Vec<PathBuf>> {
+    output(path, ["worktree", "list", "--porcelain"])?
         .lines()
-        .filter(|line| line.starts_with("worktree "))
-        .count();
-    Ok(count > 1)
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(|value| {
+            let path = PathBuf::from(value);
+            fs::canonicalize(&path)
+                .map(presentation_path)
+                .with_context(|| format!("could not resolve Git worktree {}", path.display()))
+        })
+        .collect()
 }
 
 /// Run Git in a working directory and return trimmed standard output on success.

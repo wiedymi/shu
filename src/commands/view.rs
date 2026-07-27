@@ -6,11 +6,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::{
     catalog::{self, catalog_path, repo_name},
-    cli::{Cli, FilterArgs, ListArgs},
+    cli::{Cli, FilterArgs, ListArgs, LocationsArgs},
     identity::normalize_identity,
     locations,
     model::{Catalog, ListOutput, Repo, RepoOutput},
@@ -29,7 +29,7 @@ pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
     }
     println!("Catalog: {}", catalog_path(cli)?.display());
     println!("Root:    {}\n", root_path(&catalog)?.display());
-    print_grouped_status(cli, &catalog, repos)?;
+    print_grouped_status(&catalog, repos)?;
     print_uncatalogued(&catalog)
 }
 
@@ -39,7 +39,7 @@ pub fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let max_age = args.stale.as_deref().map(parse_duration).transpose()?;
     let repos = catalog::filtered(&catalog, &args.filter)
         .filter(|repo| {
-            let path = locations::present_path(cli, &catalog, repo).ok().flatten();
+            let path = locations::present_path(&catalog, repo).ok().flatten();
             (!args.missing || path.is_none())
                 && max_age.is_none_or(|age| path.is_some_and(|path| stale(&path, age)))
         })
@@ -52,23 +52,24 @@ pub fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
             "{:<24} {:<10} {}",
             normalize_identity(&repo.source)?,
             repo.state,
-            observed_state(cli, &catalog, repo)?
+            observed_state(&catalog, repo)?
         );
     }
     Ok(())
 }
 
 /// Describe a repository's local presence without changing it.
-fn observed_state(cli: &Cli, catalog: &Catalog, repo: &Repo) -> Result<String> {
-    if let Some(path) = locations::present_path(cli, catalog, repo)? {
+fn observed_state(catalog: &Catalog, repo: &Repo) -> Result<String> {
+    if let Some(path) = locations::present_path(catalog, repo)? {
         return Ok(if stale(&path, Duration::from_secs(180 * 86400)) {
             "present (stale candidate)".into()
         } else {
             "present".into()
         });
     }
-    let remembered_exists =
-        locations::remembered_path(cli, repo)?.is_some_and(|path| path.exists());
+    let remembered_exists = locations::remembered_paths(repo)?
+        .iter()
+        .any(|path| path.exists());
     let managed = locations::managed_path(catalog, repo)?;
     Ok(if remembered_exists || managed.exists() {
         "invalid".into()
@@ -78,18 +79,18 @@ fn observed_state(cli: &Cli, catalog: &Catalog, repo: &Repo) -> Result<String> {
 }
 
 /// Emit the stable JSON contract shared by status and list.
-fn print_json(cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
+fn print_json(_cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
     let repositories = repos
         .into_iter()
         .map(|repo| {
-            let path = locations::present_path(cli, catalog, repo)?
+            let path = locations::present_path(catalog, repo)?
                 .unwrap_or(locations::managed_path(catalog, repo)?);
             Ok(RepoOutput {
                 identity: normalize_identity(&repo.source)?,
                 name: repo_name(repo).to_owned(),
                 path: absolute(&path)?.display().to_string(),
                 declared_state: repo.state,
-                observed_state: observed_state(cli, catalog, repo)?,
+                observed_state: observed_state(catalog, repo)?,
                 tags: repo.tags.clone(),
                 note: repo.note.clone(),
             })
@@ -105,8 +106,8 @@ fn print_json(cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
     Ok(())
 }
 
-/// Print lifecycle sections and local state for each selected repository.
-fn print_grouped_status(cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
+/// Print lifecycle sections and catalogued clone paths for each repository.
+fn print_grouped_status(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
     if repos.is_empty() {
         println!("No repositories are catalogued yet.");
         println!("  Add the current repository:  shu add .");
@@ -120,15 +121,15 @@ fn print_grouped_status(cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Resu
             current = Some(repo.state);
             println!("{}", repo.state.to_string().to_uppercase());
         }
-        print_repository_status(cli, catalog, repo)?;
+        print_repository_status(catalog, repo)?;
     }
     println!("\nEdit metadata: shu edit <repository> --state <state> --note <text>");
     Ok(())
 }
 
 /// Print one status entry with the expected path and next action when missing.
-fn print_repository_status(cli: &Cli, catalog: &Catalog, repo: &Repo) -> Result<()> {
-    let observed = observed_state(cli, catalog, repo)?;
+fn print_repository_status(catalog: &Catalog, repo: &Repo) -> Result<()> {
+    let observed = observed_state(catalog, repo)?;
     let marker = match observed.as_str() {
         value if value.starts_with("present") => ui::success_marker(),
         "missing" => ui::warning_marker(),
@@ -137,22 +138,108 @@ fn print_repository_status(cli: &Cli, catalog: &Catalog, repo: &Repo) -> Result<
     println!("  {marker} {:<18} {observed}", repo_name(repo));
 
     if observed == "missing" {
-        if let Some(path) = locations::remembered_path(cli, repo)? {
+        for path in locations::remembered_paths(repo)? {
             println!("    Recorded: {}", path.display());
         }
         let path = locations::managed_path(catalog, repo)?;
         println!("    Expected: {}", path.display());
         println!("    Clone:    shu ensure {}", repo_name(repo));
-    } else if let Some(path) = locations::present_path(cli, catalog, repo)?
-        && path != locations::managed_path(catalog, repo)?
-    {
-        println!("    Local:    {}", path.display());
+    } else {
+        let primary = locations::present_path(catalog, repo)?;
+        let paths = locations::present_paths(catalog, repo)?;
+        let managed = locations::managed_path(catalog, repo)?;
+        if paths.len() > 1 || paths.first().is_some_and(|path| path != &managed) {
+            println!("    Clones:");
+            for path in paths {
+                let marker = if primary.as_ref() == Some(&path) {
+                    "*"
+                } else {
+                    "·"
+                };
+                println!("      {marker} {}", path.display());
+            }
+        }
     }
     if let Some(note) = &repo.note {
         println!("    Note:     {note}");
     }
     if !repo.tags.is_empty() {
         println!("    Tags:     {}", repo.tags.join(", "));
+    }
+    Ok(())
+}
+
+/// Show known clone paths or select the preferred clone for one repository.
+pub fn locations_command(cli: &Cli, args: &LocationsArgs) -> Result<()> {
+    let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
+    let index = catalog::select_index(&catalog, &args.selector)?;
+    if let Some(path) = &args.primary {
+        let path = absolute(path)?;
+        let path = if crate::git::is_repo(&path) {
+            crate::git::worktree_root(&path)?
+        } else {
+            path
+        };
+        let name = catalog::repo_name(&catalog.repos[index]).to_owned();
+        let is_recorded = catalog.repos[index]
+            .paths
+            .iter()
+            .any(|known| known == &path.display().to_string());
+        let is_managed = path == locations::managed_path(&catalog, &catalog.repos[index])?
+            && crate::git::is_repo(&path);
+        if !is_recorded && !is_managed {
+            bail!(
+                "{} is not a known clone for {}; run `shu add .` from that clone first",
+                path.display(),
+                name
+            );
+        }
+        if !is_recorded {
+            catalog.repos[index].add_path(path.clone());
+        }
+        catalog.repos[index].primary = Some(path.display().to_string());
+        catalog::save(&catalog_path, &catalog)?;
+        println!("Preferred clone for {name}: {}", path.display());
+    }
+
+    let repo = &catalog.repos[index];
+    let primary = locations::present_path(&catalog, repo)?;
+    let mut paths = locations::remembered_paths(repo)?;
+    let managed = locations::managed_path(&catalog, repo)?;
+    if crate::git::is_repo(&managed) && !paths.iter().any(|path| path == &managed) {
+        paths.push(managed);
+    }
+    if paths.is_empty() {
+        println!("No clone paths are recorded for {}.", repo_name(repo));
+        println!("  Add an existing clone: shu add .");
+        println!("  Create the managed clone: shu ensure {}", repo_name(repo));
+        return Ok(());
+    }
+    println!("{}", repo_name(repo));
+    for path in paths {
+        let marker = if primary.as_ref() == Some(&path) {
+            "*"
+        } else {
+            "·"
+        };
+        let state = if crate::git::is_repo(&path) {
+            "present"
+        } else {
+            "missing"
+        };
+        println!("  {marker} {state:<7} {}", path.display());
+    }
+    let worktrees = locations::pickable_paths(&catalog, repo)?;
+    let clone_paths = locations::present_paths(&catalog, repo)?;
+    let linked = worktrees
+        .into_iter()
+        .filter(|path| !clone_paths.contains(path))
+        .collect::<Vec<_>>();
+    if !linked.is_empty() {
+        println!("  Worktrees:");
+        for path in linked {
+            println!("    · {}", path.display());
+        }
     }
     Ok(())
 }

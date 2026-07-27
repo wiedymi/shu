@@ -22,19 +22,40 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
     if let Some(source) = &args.source {
         activate_source(cli, args, source)?;
     }
-    let (_, catalog) = catalog::load_or_initialize(cli)?;
-    let repos = catalog::filtered(&catalog, &args.filter).collect::<Vec<_>>();
-    if !confirm_restore(cli, args, repos.len())? {
+    let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
+    let repo_indices = catalog
+        .repos
+        .iter()
+        .enumerate()
+        .filter(|(_, repo)| {
+            args.filter.state.is_none_or(|state| repo.state == state)
+                && args
+                    .filter
+                    .tag
+                    .as_ref()
+                    .is_none_or(|tag| repo.tags.contains(tag))
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if !confirm_restore(cli, args, repo_indices.len())? {
         println!("No changes made.");
         return Ok(());
     }
     fs::create_dir_all(root_path(&catalog)?)?;
     let mut failures = 0;
-    for repo in repos {
-        if let Err(error) = restore_one(cli, &catalog, repo) {
-            eprintln!("! {}: {error:#}", repo.source);
-            failures += 1;
+    let mut changed = false;
+    for index in repo_indices {
+        let source = catalog.repos[index].source.clone();
+        match restore_one(&mut catalog, index) {
+            Ok(wrote_path) => changed |= wrote_path,
+            Err(error) => {
+                eprintln!("! {source}: {error:#}");
+                failures += 1;
+            }
         }
+    }
+    if changed {
+        catalog::save(&catalog_path, &catalog)?;
     }
     if failures > 0 {
         bail!(
@@ -69,9 +90,10 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
 
 /// Ensure one selected repository exists and print its absolute local path.
 pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
-    let (_, catalog) = catalog::load_or_initialize(cli)?;
-    let repo = catalog::select(&catalog, &args.selector)?;
-    if let Some(existing) = locations::present_path(cli, &catalog, repo)? {
+    let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
+    let index = catalog::select_index(&catalog, &args.selector)?;
+    let repo = &catalog.repos[index];
+    if let Some(existing) = locations::present_path(&catalog, repo)? {
         if args.path_only {
             println!("{}", existing.display());
         } else {
@@ -79,6 +101,8 @@ pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
         }
         return Ok(());
     }
+    let source = repo.source.clone();
+    let name = repo_name(repo).to_owned();
     let target = repo_path(&catalog, repo)?;
     if target.exists() {
         bail!(
@@ -86,14 +110,15 @@ pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
             target.display()
         );
     }
-    eprintln!("↓ cloning {}", repo.source);
-    git::clone(&repo.source, &target)?;
+    eprintln!("↓ cloning {source}");
+    git::clone(&source, &target)?;
     let target = absolute(&target)?;
-    catalog::remember_local_path(cli, &repo.source, &target)?;
+    remember_new_clone(&mut catalog.repos[index], &target);
+    catalog::save(&catalog_path, &catalog)?;
     if args.path_only {
         println!("{}", target.display());
     } else {
-        println!("Ensured {} at {}", repo_name(repo), target.display());
+        println!("Ensured {name} at {}", target.display());
     }
     Ok(())
 }
@@ -102,7 +127,7 @@ pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
 pub fn path_command(cli: &Cli, args: &SelectorArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repo = catalog::select(&catalog, &args.selector)?;
-    let Some(path) = locations::present_path(cli, &catalog, repo)? else {
+    let Some(path) = locations::present_path(&catalog, repo)? else {
         bail!(
             "repository is missing locally: {}",
             locations::managed_path(&catalog, repo)?.display()
@@ -155,14 +180,15 @@ fn confirm_restore(cli: &Cli, args: &RestoreArgs, count: usize) -> Result<bool> 
 }
 
 /// Clone one missing repository while preserving any existing path conflict.
-fn restore_one(cli: &Cli, catalog: &Catalog, repo: &crate::model::Repo) -> Result<()> {
-    if let Some(path) = locations::present_path(cli, catalog, repo)? {
+fn restore_one(catalog: &mut Catalog, index: usize) -> Result<bool> {
+    let repo = &catalog.repos[index];
+    if let Some(path) = locations::present_path(catalog, repo)? {
         println!(
             "✓ {} already present at {}",
             repo_name(repo),
             path.display()
         );
-        return Ok(());
+        return Ok(false);
     }
     let target = repo_path(catalog, repo)?;
     if target.exists() {
@@ -174,7 +200,19 @@ fn restore_one(cli: &Cli, catalog: &Catalog, repo: &crate::model::Repo) -> Resul
     } else {
         eprintln!("↓ cloning {}", repo.source);
         git::clone(&repo.source, &target)?;
-        catalog::remember_local_path(cli, &repo.source, &target)?;
+        let target = absolute(&target)?;
+        remember_new_clone(&mut catalog.repos[index], &target);
     }
-    Ok(())
+    Ok(true)
+}
+
+/// Add a just-created canonical clone to the one catalog file and prefer it if needed.
+fn remember_new_clone(repo: &mut crate::model::Repo, path: &std::path::Path) {
+    let replace_primary = repo
+        .primary_path()
+        .is_none_or(|primary| !git::is_repo(&primary));
+    repo.add_path(path.to_path_buf());
+    if replace_primary {
+        repo.primary = Some(path.display().to_string());
+    }
 }

@@ -27,8 +27,11 @@ const MAX_VISIBLE_RESULTS: usize = 12;
 pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let candidates = catalog::filtered(&catalog, &args.filter)
-        .filter_map(|repo| candidate(cli, &catalog, repo).transpose())
-        .collect::<Result<Vec<_>>>()?;
+        .map(|repo| candidates(&catalog, repo))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     if candidates.is_empty() {
         bail!(
             "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu ensure <repository>` to clone one, or run `shu add .` from an existing clone to record it"
@@ -59,25 +62,21 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
 struct Candidate {
     identity: String,
     state: String,
-    tags: String,
     path: PathBuf,
 }
 
-/// Convert a valid local catalog entry into a searchable picker candidate.
-fn candidate(cli: &Cli, catalog: &crate::model::Catalog, repo: &Repo) -> Result<Option<Candidate>> {
-    let Some(path) = locations::present_path(cli, catalog, repo)? else {
-        return Ok(None);
-    };
-    Ok(Some(Candidate {
-        identity: repo.source.clone(),
-        state: repo.state.to_string(),
-        tags: if repo.tags.is_empty() {
-            "-".into()
-        } else {
-            repo.tags.join(",")
-        },
-        path,
-    }))
+/// Convert each present clone and Git worktree into a searchable picker candidate.
+fn candidates(catalog: &crate::model::Catalog, repo: &Repo) -> Result<Vec<Candidate>> {
+    locations::pickable_paths(catalog, repo).map(|paths| {
+        paths
+            .into_iter()
+            .map(|path| Candidate {
+                identity: repo.source.clone(),
+                state: repo.state.to_string(),
+                path,
+            })
+            .collect()
+    })
 }
 
 /// Run a raw-key terminal interface until the user selects a candidate or cancels.
@@ -143,10 +142,16 @@ fn ranked(candidates: &[Candidate], query: &str) -> Vec<Candidate> {
     let mut matches = candidates
         .iter()
         .filter_map(|candidate| {
-            fuzzy_score(&candidate.identity, query).map(|score| (score, candidate.clone()))
+            fuzzy_score(
+                &format!("{} {}", candidate.identity, candidate.path.display()),
+                query,
+            )
+            .map(|score| (score, candidate.clone()))
         })
         .collect::<Vec<_>>();
-    matches.sort_by_key(|(score, candidate)| (Reverse(*score), candidate.identity.clone()));
+    // `sort_by_key` is stable, so equal fuzzy scores retain the primary-first
+    // order supplied by `locations::pickable_paths`.
+    matches.sort_by_key(|(score, _)| Reverse(*score));
     matches
         .into_iter()
         .map(|(_, candidate)| candidate)
@@ -222,7 +227,9 @@ impl PickerTerminal {
             writeln!(
                 self.stderr,
                 "{marker} {:<36} {:<10} {}",
-                candidate.identity, candidate.state, candidate.tags
+                candidate.identity,
+                candidate.state,
+                candidate.path.display()
             )?;
         }
         self.stderr.flush()?;

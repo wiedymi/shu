@@ -4,11 +4,11 @@
 [![Checks](https://img.shields.io/github/actions/workflow/status/wiedymi/shu/ci.yml?branch=main&style=flat-square&label=checks)](https://github.com/wiedymi/shu/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/wiedymi/shu?style=flat-square)](LICENSE)
 
-**Your portable library of Git repositories.**
+**Your simple library of Git repositories.**
 
-Shu keeps a small, readable catalog of the repositories you care about. Put the
-catalog in Git, restore it on a new computer, and always know where a project
-lives locally.
+Shu keeps one small, readable `shu.toml` catalog of the repositories you care
+about. Put it in Git, restore it on a new computer, and always know where a
+project lives locally.
 
 - Restore your repository collection with one command.
 - Keep old projects as active, parked, reference, or archived—without deleting them.
@@ -35,11 +35,10 @@ shu restore github.com/your-name/your-repository-library
 
 Shu reads the repository's root-level `shu.toml`, puts missing repositories
 under `~/shu` by default, and leaves existing repositories alone. `shu add .`
-also remembers that current clone on this machine, so it remains available to
-`shu`, `shu path`, and `shu ensure` without an unnecessary move. If you start
-with an empty machine, everyday commands create an empty local catalog for you.
-Those remembered paths live in Shu's local state, never in the portable
-`shu.toml` you commit or restore elsewhere.
+adds that current clone to the repository's `paths` list in the same catalog,
+so it remains available to `shu`, `shu path`, and `shu ensure` without an
+unnecessary move. If you start with an empty machine, everyday commands create
+an empty local catalog for you.
 
 ## Install
 
@@ -72,6 +71,7 @@ shu status              # See what is present, missing, or uncatalogued
 shu restore             # Clone catalogued repositories that are missing
 shu doctor              # Check Git, the catalog, and the configured root
 shu ensure my-project   # Ensure one repository exists and print its path
+shu locations my-project # Show every known clone and its Git worktrees
 shu edit my-project --state parked --note "Paused until the next release"
 shu add . --migrate     # Move a clean local repository into ~/shu's layout
 ```
@@ -94,7 +94,8 @@ manage the wrapper yourself, use `shu shell init pwsh --print` or provide an
 explicit target with `shu shell init pwsh --path ./profile.ps1`.
 
 The picker offers repositories that are actually present on this machine,
-including existing clones recorded with `shu add .`. `--migrate` remains the
+including every existing clone recorded with `shu add .` and real Git
+worktrees discovered dynamically from those clones. `--migrate` remains the
 explicit option to move a clean clone into Shu's managed root. If `shu status`
 shows a repository as **missing**, restore it with `shu ensure name` or run
 `shu add .` from the existing clone to record it.
@@ -105,7 +106,12 @@ For scripts and agents:
 repo_path="$(shu ensure github.com/example-org/project --path-only)"
 ```
 
-## A small catalog
+## `shu.toml` reference
+
+`shu.toml` is Shu's only user-facing configuration file. It describes the
+repositories you care about and, when you add existing clones, the local paths
+where you keep them. There is one `[[repos]]` entry for each repository
+identity.
 
 ```toml
 version = 1
@@ -116,6 +122,58 @@ source = "github.com/your-name/project"
 state = "active"
 tags = ["personal", "rust"]
 note = "A project I work on regularly"
+paths = [
+  "C:/Users/you/Projects/project",
+  "C:/Users/you/shu/github.com/your-name/project",
+]
+primary = "C:/Users/you/Projects/project"
+```
+
+| Field | Meaning | Default |
+| --- | --- | --- |
+| `version` | Catalog format version. | Required; currently `1`. |
+| `root` | Canonical destination used by `shu restore` and `shu ensure` for a repository that has no usable local clone. | `~/shu` |
+| `repos[].source` | Repository identity: `host/namespace/repository`. HTTPS and SSH URLs are normalized to this form by `shu add`. | Required. |
+| `repos[].state` | Your lifecycle label: `active`, `parked`, `reference`, or `archived`. It is never inferred from age. | `active` |
+| `repos[].tags` | Optional labels for filtering and grouping. | `[]` |
+| `repos[].note` | Optional human context about why the repository is kept. | Absent |
+| `repos[].paths` | Every known full clone of the repository. `shu add .` appends the current clone without moving it. | `[]` |
+| `repos[].primary` | The clone Shu prefers for `shu path`, `shu ensure`, and the first picker result. | The first valid path, then the managed path. |
+
+`paths` holds normal full-clone roots. A path that does not exist on the
+current computer is ignored safely, which makes one catalog usable across your
+machines. Git worktrees are deliberately not stored: Shu discovers them from
+each valid clone every time it opens the picker or runs `shu locations`.
+
+`root` does not move anything by itself. It only determines the canonical
+managed destination:
+
+```text
+<root>/<host>/<namespace>/<repository>
+```
+
+For example, `github.com/your-name/project` with the default root belongs at:
+
+```text
+~/shu/github.com/your-name/project
+```
+
+Choose the preferred clone explicitly with:
+
+```sh
+shu locations project --primary /path/to/project
+```
+
+Inspect all known clones and dynamically discovered worktrees with:
+
+```sh
+shu locations project
+```
+
+To register another existing full clone, run this from inside it:
+
+```sh
+shu add .
 ```
 
 The catalog is deliberately data-only: no secrets, setup hooks, or arbitrary
