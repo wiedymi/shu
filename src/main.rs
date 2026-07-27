@@ -30,6 +30,7 @@ use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands};
 
+/// Run the CLI and render any error as a concise diagnostic.
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error:#}");
@@ -37,6 +38,7 @@ fn main() {
     }
 }
 
+/// Parse arguments and dispatch the selected command implementation.
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match &cli.command {

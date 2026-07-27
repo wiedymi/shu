@@ -12,10 +12,12 @@ use std::{
 use crate::identity::normalize_identity;
 use anyhow::{Context, Result, anyhow, bail};
 
+/// Return whether a path is an accessible Git working tree.
 pub fn is_repo(path: &Path) -> bool {
     output(path, ["rev-parse", "--is-inside-work-tree"]).is_ok()
 }
 
+/// Run Git in a working directory and return trimmed standard output on success.
 pub fn output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
     let result = Command::new("git")
         .arg("-C")
@@ -33,10 +35,12 @@ pub fn output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
     Ok(String::from_utf8(result.stdout)?.trim().to_owned())
 }
 
+/// Compatibility alias for [`output`], used by catalog code.
 pub fn git_output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
     output(dir, args)
 }
 
+/// Clone an identity into an empty canonical target path using HTTPS transport.
 pub fn clone(identity: &str, target: &Path) -> Result<()> {
     let parent = target
         .parent()

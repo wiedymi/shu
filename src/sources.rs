@@ -28,6 +28,7 @@ pub fn resolve(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Resu
     fetch_repository(source, file, git_ref)
 }
 
+/// Fetch a Git-backed catalog into Shu-owned cache state and read its TOML file.
 fn fetch_repository(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Result<String> {
     let identity = normalize_identity(source)?;
     let mut hasher = Sha256::new();
@@ -85,6 +86,7 @@ fn fetch_repository(source: &str, file: Option<&Path>, git_ref: Option<&str>) ->
     })
 }
 
+/// Download a direct TOML URL with an explicit Shu user agent.
 fn http_get(url: &str) -> Result<String> {
     reqwest::blocking::Client::builder()
         .user_agent("shu/0.1")
@@ -96,6 +98,7 @@ fn http_get(url: &str) -> Result<String> {
         .context("could not read catalog response")
 }
 
+/// Read one named catalog file from a public GitHub Gist.
 fn fetch_gist(source: &str, file: Option<&Path>) -> Result<String> {
     let id = source
         .trim_end_matches('/')

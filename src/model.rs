@@ -101,6 +101,7 @@ pub struct RepoOutput {
 pub fn default_root() -> String {
     "~/Code".into()
 }
+/// Default a newly added entry to active when its catalog field is omitted.
 fn default_state() -> Lifecycle {
     Lifecycle::Active
 }

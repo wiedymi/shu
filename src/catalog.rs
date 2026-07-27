@@ -16,6 +16,7 @@ use crate::{
     model::{Catalog, Repo},
 };
 
+/// Return the active catalog path, honoring the global `--catalog` override.
 pub fn catalog_path(cli: &Cli) -> Result<PathBuf> {
     Ok(cli
         .catalog
@@ -23,6 +24,7 @@ pub fn catalog_path(cli: &Cli) -> Result<PathBuf> {
         .unwrap_or_else(|| dirs().unwrap().config_dir().join("shu.toml")))
 }
 
+/// Return the sidecar file that records the source used by `shu update`.
 pub fn origin_path(cli: &Cli) -> Result<PathBuf> {
     if let Some(catalog) = &cli.catalog {
         return Ok(catalog.with_extension("origin.json"));
@@ -30,6 +32,7 @@ pub fn origin_path(cli: &Cli) -> Result<PathBuf> {
     Ok(dirs()?.config_dir().join("origin.json"))
 }
 
+/// Return Shu's disposable, machine-local state directory.
 pub fn state_dir() -> Result<PathBuf> {
     let project = dirs()?;
     Ok(project
@@ -38,6 +41,7 @@ pub fn state_dir() -> Result<PathBuf> {
         .to_path_buf())
 }
 
+/// Load and validate the selected catalog, returning its path and parsed data.
 pub fn load(cli: &Cli) -> Result<(PathBuf, Catalog)> {
     let path = catalog_path(cli)?;
     let data = fs::read_to_string(&path).with_context(|| {
@@ -54,6 +58,7 @@ pub fn load(cli: &Cli) -> Result<(PathBuf, Catalog)> {
     Ok((path, catalog))
 }
 
+/// Serialize a catalog to TOML, creating its parent directory when necessary.
 pub fn save(path: &Path, catalog: &Catalog) -> Result<()> {
     let parent = path
         .parent()
@@ -63,6 +68,7 @@ pub fn save(path: &Path, catalog: &Catalog) -> Result<()> {
         .with_context(|| format!("could not write catalog {}", path.display()))
 }
 
+/// Resolve `.` or a local repository path to its origin remote; pass other values through.
 pub fn source_from_argument(value: &str) -> Result<String> {
     if value == "." || Path::new(value).exists() {
         let path = if value == "." {
@@ -75,6 +81,7 @@ pub fn source_from_argument(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
+/// Iterate catalog entries that satisfy optional tag and lifecycle filters.
 pub fn filtered<'a>(
     catalog: &'a Catalog,
     filter: &'a FilterArgs,
@@ -88,10 +95,12 @@ pub fn filtered<'a>(
     })
 }
 
+/// Resolve a selector to exactly one catalog entry.
 pub fn select<'a>(catalog: &'a Catalog, selector: &str) -> Result<&'a Repo> {
     Ok(&catalog.repos[select_index(catalog, selector)?])
 }
 
+/// Resolve a selector to an index, rejecting absent and ambiguous matches.
 pub fn select_index(catalog: &Catalog, selector: &str) -> Result<usize> {
     let selector = if Path::new(selector).exists() {
         normalize_identity(&source_from_argument(selector)?)?
@@ -121,6 +130,7 @@ pub fn select_index(catalog: &Catalog, selector: &str) -> Result<usize> {
     }
 }
 
+/// Return the final path component of a repository identity.
 pub fn repo_name(repo: &Repo) -> &str {
     repo.source
         .trim_end_matches('/')
@@ -130,6 +140,7 @@ pub fn repo_name(repo: &Repo) -> &str {
         .unwrap_or(&repo.source)
 }
 
+/// Remove duplicate strings while preserving their first-seen order.
 pub fn unique(items: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     items
@@ -138,6 +149,7 @@ pub fn unique(items: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// Resolve platform-native application directories.
 fn dirs() -> Result<ProjectDirs> {
     ProjectDirs::from("dev", "wiedymi", "shu")
         .ok_or_else(|| anyhow!("could not determine Shu configuration directory"))

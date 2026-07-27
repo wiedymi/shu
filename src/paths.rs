@@ -8,12 +8,15 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 
+/// Expand the catalog root, including a leading home-directory marker.
 pub fn root_path(catalog: &Catalog) -> Result<PathBuf> {
     expand_home(&catalog.root)
 }
+/// Derive a repository's canonical local path below the catalog root.
 pub fn repo_path(catalog: &Catalog, repo: &Repo) -> Result<PathBuf> {
     Ok(root_path(catalog)?.join(normalize_identity(&repo.source)?))
 }
+/// Convert a path to an absolute path without resolving symlinks.
 pub fn absolute(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.to_path_buf())
@@ -22,6 +25,7 @@ pub fn absolute(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Expand `~`, `~/`, and `~\\` prefixes using the current user's home directory.
 fn expand_home(value: &str) -> Result<PathBuf> {
     if value == "~" || value.starts_with("~/") || value.starts_with("~\\") {
         let home = directories::BaseDirs::new()
