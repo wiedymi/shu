@@ -220,6 +220,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn uses_the_com_wiedymi_shu_application_identifier() {
         assert!(
