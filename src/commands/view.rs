@@ -11,10 +11,10 @@ use anyhow::{Context, Result};
 use crate::{
     catalog::{self, catalog_path, repo_name},
     cli::{Cli, FilterArgs, ListArgs},
-    git,
     identity::normalize_identity,
+    locations,
     model::{Catalog, ListOutput, Repo, RepoOutput},
-    paths::{absolute, repo_path, root_path},
+    paths::{absolute, root_path},
     ui,
 };
 
@@ -25,11 +25,11 @@ pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repos = catalog::filtered(&catalog, filter).collect::<Vec<_>>();
     if cli.json {
-        return print_json(&catalog, repos);
+        return print_json(cli, &catalog, repos);
     }
     println!("Catalog: {}", catalog_path(cli)?.display());
     println!("Root:    {}\n", root_path(&catalog)?.display());
-    print_grouped_status(&catalog, repos)?;
+    print_grouped_status(cli, &catalog, repos)?;
     print_uncatalogued(&catalog)
 }
 
@@ -39,35 +39,38 @@ pub fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let max_age = args.stale.as_deref().map(parse_duration).transpose()?;
     let repos = catalog::filtered(&catalog, &args.filter)
         .filter(|repo| {
-            let path = repo_path(&catalog, repo).ok();
-            (!args.missing || path.as_ref().is_some_and(|path| !git::is_repo(path)))
+            let path = locations::present_path(cli, &catalog, repo).ok().flatten();
+            (!args.missing || path.is_none())
                 && max_age.is_none_or(|age| path.is_some_and(|path| stale(&path, age)))
         })
         .collect::<Vec<_>>();
     if cli.json {
-        return print_json(&catalog, repos);
+        return print_json(cli, &catalog, repos);
     }
     for repo in repos {
         println!(
             "{:<24} {:<10} {}",
             normalize_identity(&repo.source)?,
             repo.state,
-            observed_state(&catalog, repo)?
+            observed_state(cli, &catalog, repo)?
         );
     }
     Ok(())
 }
 
 /// Describe a repository's local presence without changing it.
-fn observed_state(catalog: &Catalog, repo: &Repo) -> Result<String> {
-    let path = repo_path(catalog, repo)?;
-    Ok(if git::is_repo(&path) {
-        if stale(&path, Duration::from_secs(180 * 86400)) {
+fn observed_state(cli: &Cli, catalog: &Catalog, repo: &Repo) -> Result<String> {
+    if let Some(path) = locations::present_path(cli, catalog, repo)? {
+        return Ok(if stale(&path, Duration::from_secs(180 * 86400)) {
             "present (stale candidate)".into()
         } else {
             "present".into()
-        }
-    } else if path.exists() {
+        });
+    }
+    let remembered_exists =
+        locations::remembered_path(cli, repo)?.is_some_and(|path| path.exists());
+    let managed = locations::managed_path(catalog, repo)?;
+    Ok(if remembered_exists || managed.exists() {
         "invalid".into()
     } else {
         "missing".into()
@@ -75,17 +78,18 @@ fn observed_state(catalog: &Catalog, repo: &Repo) -> Result<String> {
 }
 
 /// Emit the stable JSON contract shared by status and list.
-fn print_json(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
+fn print_json(cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
     let repositories = repos
         .into_iter()
         .map(|repo| {
-            let path = repo_path(catalog, repo)?;
+            let path = locations::present_path(cli, catalog, repo)?
+                .unwrap_or(locations::managed_path(catalog, repo)?);
             Ok(RepoOutput {
                 identity: normalize_identity(&repo.source)?,
                 name: repo_name(repo).to_owned(),
                 path: absolute(&path)?.display().to_string(),
                 declared_state: repo.state,
-                observed_state: observed_state(catalog, repo)?,
+                observed_state: observed_state(cli, catalog, repo)?,
                 tags: repo.tags.clone(),
                 note: repo.note.clone(),
             })
@@ -102,7 +106,7 @@ fn print_json(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
 }
 
 /// Print lifecycle sections and local state for each selected repository.
-fn print_grouped_status(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
+fn print_grouped_status(cli: &Cli, catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
     if repos.is_empty() {
         println!("No repositories are catalogued yet.");
         println!("  Add the current repository:  shu add .");
@@ -116,15 +120,15 @@ fn print_grouped_status(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
             current = Some(repo.state);
             println!("{}", repo.state.to_string().to_uppercase());
         }
-        print_repository_status(catalog, repo)?;
+        print_repository_status(cli, catalog, repo)?;
     }
     println!("\nEdit metadata: shu edit <repository> --state <state> --note <text>");
     Ok(())
 }
 
 /// Print one status entry with the expected path and next action when missing.
-fn print_repository_status(catalog: &Catalog, repo: &Repo) -> Result<()> {
-    let observed = observed_state(catalog, repo)?;
+fn print_repository_status(cli: &Cli, catalog: &Catalog, repo: &Repo) -> Result<()> {
+    let observed = observed_state(cli, catalog, repo)?;
     let marker = match observed.as_str() {
         value if value.starts_with("present") => ui::success_marker(),
         "missing" => ui::warning_marker(),
@@ -133,9 +137,16 @@ fn print_repository_status(catalog: &Catalog, repo: &Repo) -> Result<()> {
     println!("  {marker} {:<18} {observed}", repo_name(repo));
 
     if observed == "missing" {
-        let path = absolute(&repo_path(catalog, repo)?)?;
+        if let Some(path) = locations::remembered_path(cli, repo)? {
+            println!("    Recorded: {}", path.display());
+        }
+        let path = locations::managed_path(catalog, repo)?;
         println!("    Expected: {}", path.display());
         println!("    Clone:    shu ensure {}", repo_name(repo));
+    } else if let Some(path) = locations::present_path(cli, catalog, repo)?
+        && path != locations::managed_path(catalog, repo)?
+    {
+        println!("    Local:    {}", path.display());
     }
     if let Some(note) = &repo.note {
         println!("    Note:     {note}");

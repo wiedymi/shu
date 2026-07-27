@@ -85,7 +85,7 @@ pub struct RepoOutput {
     pub identity: String,
     /// Last component of the repository identity.
     pub name: String,
-    /// Canonical absolute local path.
+    /// Present observed path, or the canonical destination when missing.
     pub path: String,
     /// Lifecycle state stored in the catalog.
     pub declared_state: Lifecycle,

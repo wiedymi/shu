@@ -23,6 +23,8 @@ mod hash;
 mod http;
 /// Git remote and repository-identity normalization.
 mod identity;
+/// Local paths observed on this machine and canonical managed destinations.
+mod locations;
 /// Serializable catalog data structures.
 mod model;
 /// Filesystem path derivation helpers.

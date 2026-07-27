@@ -36,6 +36,13 @@ shu --catalog "$workspace/shu.toml" doctor | grep -q '^✓ catalog:'
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$path"
 shu --catalog "$workspace/shu.toml" --json list | grep -q '"observed_state": "present"'
 
+# Normal add records an existing clone in local state without moving it. The
+# recorded location is then preferred by ensure and the picker.
+git -C "$workspace/seed" remote set-url origin 'https://github.com/example-org/api.git'
+GIT_CONFIG_COUNT=0 shu --catalog "$workspace/shu.toml" add "$workspace/seed"
+test "$(shu --catalog "$workspace/shu.toml" ensure api --path-only)" = "$workspace/seed"
+test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$workspace/seed"
+
 # Shell setup is persistent and idempotent. Use an explicit file in the
 # container so this checks the same setup path without changing a real shell
 # profile.

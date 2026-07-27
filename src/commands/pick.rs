@@ -17,9 +17,8 @@ use crossterm::{
 use crate::{
     catalog,
     cli::{Cli, PickArgs},
-    git,
+    locations,
     model::Repo,
-    paths::repo_path,
 };
 
 const MAX_VISIBLE_RESULTS: usize = 12;
@@ -28,11 +27,11 @@ const MAX_VISIBLE_RESULTS: usize = 12;
 pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let candidates = catalog::filtered(&catalog, &args.filter)
-        .filter_map(|repo| candidate(&catalog, repo).transpose())
+        .filter_map(|repo| candidate(cli, &catalog, repo).transpose())
         .collect::<Result<Vec<_>>>()?;
     if candidates.is_empty() {
         bail!(
-            "no catalogued repositories are available at Shu's managed paths. Run `shu status` to see each expected path; use `shu ensure <repository>` to clone one, or `shu add . --migrate` from an existing clean clone"
+            "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu ensure <repository>` to clone one, or run `shu add .` from an existing clone to record it"
         );
     }
 
@@ -65,11 +64,10 @@ struct Candidate {
 }
 
 /// Convert a valid local catalog entry into a searchable picker candidate.
-fn candidate(catalog: &crate::model::Catalog, repo: &Repo) -> Result<Option<Candidate>> {
-    let path = repo_path(catalog, repo)?;
-    if !git::is_repo(&path) {
+fn candidate(cli: &Cli, catalog: &crate::model::Catalog, repo: &Repo) -> Result<Option<Candidate>> {
+    let Some(path) = locations::present_path(cli, catalog, repo)? else {
         return Ok(None);
-    }
+    };
     Ok(Some(Candidate {
         identity: repo.source.clone(),
         state: repo.state.to_string(),

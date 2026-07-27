@@ -23,8 +23,31 @@ pub fn worktree_root(path: &Path) -> Result<PathBuf> {
         bail!("not a Git working tree: {}", path.display());
     }
     let root = PathBuf::from(output(path, ["rev-parse", "--show-toplevel"])?);
-    fs::canonicalize(&root)
-        .with_context(|| format!("could not resolve Git working tree {}", root.display()))
+    let resolved = fs::canonicalize(&root)
+        .with_context(|| format!("could not resolve Git working tree {}", root.display()))?;
+    Ok(presentation_path(resolved))
+}
+
+/// Remove Windows' internal verbatim-path prefix before displaying or storing a path.
+///
+/// `canonicalize` may return `\\?\C:\...`, which is valid for Windows APIs but
+/// surprising in user-facing catalog observations and shell navigation output.
+#[cfg(windows)]
+fn presentation_path(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = value.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path
+}
+
+/// Preserve canonical paths unchanged on platforms without Windows verbatim paths.
+#[cfg(not(windows))]
+fn presentation_path(path: PathBuf) -> PathBuf {
+    path
 }
 
 /// Return whether a working tree has no staged, unstaged, or untracked changes.

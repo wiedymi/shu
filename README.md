@@ -34,8 +34,12 @@ shu restore github.com/your-name/your-repository-library
 ```
 
 Shu reads the repository's root-level `shu.toml`, puts missing repositories
-under `~/shu` by default, and leaves existing repositories alone. If you start
+under `~/shu` by default, and leaves existing repositories alone. `shu add .`
+also remembers that current clone on this machine, so it remains available to
+`shu`, `shu path`, and `shu ensure` without an unnecessary move. If you start
 with an empty machine, everyday commands create an empty local catalog for you.
+Those remembered paths live in Shu's local state, never in the portable
+`shu.toml` you commit or restore elsewhere.
 
 ## Install
 
@@ -89,10 +93,11 @@ a program cannot modify its parent shell's current session. To inspect or
 manage the wrapper yourself, use `shu shell init pwsh --print` or provide an
 explicit target with `shu shell init pwsh --path ./profile.ps1`.
 
-The picker only offers repositories that are actually present under Shu's
-managed root. If `shu status` shows a repository as **missing**, restore it
-with `shu ensure name`, or migrate its existing clean clone with
-`shu add . --migrate` before using bare `shu`.
+The picker offers repositories that are actually present on this machine,
+including existing clones recorded with `shu add .`. `--migrate` remains the
+explicit option to move a clean clone into Shu's managed root. If `shu status`
+shows a repository as **missing**, restore it with `shu ensure name` or run
+`shu add .` from the existing clone to record it.
 
 For scripts and agents:
 
@@ -117,9 +122,9 @@ The catalog is deliberately data-only: no secrets, setup hooks, or arbitrary
 commands. Shu never deletes repositories, resets a working tree, or overwrites
 a conflicting directory.
 
-When `shu status` says a repository is **missing**, it means the canonical
-clone is not yet under Shu's configured root. It prints the expected path and
-the exact `shu ensure <repository>` command to create it. To update catalog
+When `shu status` says a repository is **missing**, Shu cannot find a recorded
+local clone or its canonical destination. It prints the expected path and the
+exact `shu ensure <repository>` command to create it. To update catalog
 metadata without changing repository files:
 
 ```sh

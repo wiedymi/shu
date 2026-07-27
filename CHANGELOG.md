@@ -7,6 +7,19 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-27
+
+### Changed
+
+- `shu add .` now records an existing clone as machine-local observation state
+  instead of treating the canonical Shu path as its only location. The
+  portable catalog stays path-free, and `--migrate` remains the explicit move.
+
+### Fixed
+
+- PowerShell navigation selects one returned path before calling
+  `Set-Location`, avoiding native-command output arrays.
+
 ## [0.1.7] - 2026-07-27
 
 ### Added

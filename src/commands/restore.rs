@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use crate::{
     catalog::{self, catalog_path, repo_name},
     cli::{Cli, EnsureArgs, FilterArgs, RestoreArgs, SelectorArgs, UpdateArgs},
-    git,
+    git, locations,
     model::{Catalog, Origin},
     paths::{absolute, repo_path, root_path},
     sources,
@@ -31,7 +31,7 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
     fs::create_dir_all(root_path(&catalog)?)?;
     let mut failures = 0;
     for repo in repos {
-        if let Err(error) = restore_one(&catalog, repo) {
+        if let Err(error) = restore_one(cli, &catalog, repo) {
             eprintln!("! {}: {error:#}", repo.source);
             failures += 1;
         }
@@ -67,22 +67,29 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     )
 }
 
-/// Ensure one selected repository exists and print its absolute canonical path.
+/// Ensure one selected repository exists and print its absolute local path.
 pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repo = catalog::select(&catalog, &args.selector)?;
-    let target = repo_path(&catalog, repo)?;
-    if !git::is_repo(&target) {
-        if target.exists() {
-            bail!(
-                "target path exists but is not a valid Git repository: {}",
-                target.display()
-            );
+    if let Some(existing) = locations::present_path(cli, &catalog, repo)? {
+        if args.path_only {
+            println!("{}", existing.display());
+        } else {
+            println!("Ensured {} at {}", repo_name(repo), existing.display());
         }
-        eprintln!("↓ cloning {}", repo.source);
-        git::clone(&repo.source, &target)?;
+        return Ok(());
     }
+    let target = repo_path(&catalog, repo)?;
+    if target.exists() {
+        bail!(
+            "target path exists but is not a valid Git repository: {}",
+            target.display()
+        );
+    }
+    eprintln!("↓ cloning {}", repo.source);
+    git::clone(&repo.source, &target)?;
     let target = absolute(&target)?;
+    catalog::remember_local_path(cli, &repo.source, &target)?;
     if args.path_only {
         println!("{}", target.display());
     } else {
@@ -95,11 +102,13 @@ pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
 pub fn path_command(cli: &Cli, args: &SelectorArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let repo = catalog::select(&catalog, &args.selector)?;
-    let target = repo_path(&catalog, repo)?;
-    if !git::is_repo(&target) {
-        bail!("repository is missing locally: {}", target.display());
-    }
-    println!("{}", absolute(&target)?.display());
+    let Some(path) = locations::present_path(cli, &catalog, repo)? else {
+        bail!(
+            "repository is missing locally: {}",
+            locations::managed_path(&catalog, repo)?.display()
+        );
+    };
+    println!("{}", path.display());
     Ok(())
 }
 
@@ -146,11 +155,17 @@ fn confirm_restore(cli: &Cli, args: &RestoreArgs, count: usize) -> Result<bool> 
 }
 
 /// Clone one missing repository while preserving any existing path conflict.
-fn restore_one(catalog: &Catalog, repo: &crate::model::Repo) -> Result<()> {
+fn restore_one(cli: &Cli, catalog: &Catalog, repo: &crate::model::Repo) -> Result<()> {
+    if let Some(path) = locations::present_path(cli, catalog, repo)? {
+        println!(
+            "✓ {} already present at {}",
+            repo_name(repo),
+            path.display()
+        );
+        return Ok(());
+    }
     let target = repo_path(catalog, repo)?;
-    if git::is_repo(&target) {
-        println!("✓ {} already present", repo_name(repo));
-    } else if target.exists() {
+    if target.exists() {
         bail!(
             "{} exists but is not a valid Git repository: {}",
             repo_name(repo),
@@ -159,6 +174,7 @@ fn restore_one(catalog: &Catalog, repo: &crate::model::Repo) -> Result<()> {
     } else {
         eprintln!("↓ cloning {}", repo.source);
         git::clone(&repo.source, &target)?;
+        catalog::remember_local_path(cli, &repo.source, &target)?;
     }
     Ok(())
 }

@@ -209,8 +209,8 @@ function shu {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ShuArgs)
     $ShuBinary = (Get-Command shu -CommandType Application | Select-Object -First 1).Source
     if ($ShuArgs.Count -eq 0) {
-        $ShuDirectory = & $ShuBinary pick --path-only
-        if ($LASTEXITCODE -eq 0 -and $ShuDirectory) {
+        $ShuDirectory = @(& $ShuBinary pick --path-only) | Select-Object -Last 1
+        if ($LASTEXITCODE -eq 0 -and $ShuDirectory -is [string] -and $ShuDirectory) {
             Set-Location -LiteralPath $ShuDirectory
         }
         return
@@ -253,6 +253,11 @@ mod tests {
             assert!(integration(shell).contains("pick --path-only"));
             assert!(integration(shell).contains(BEGIN_MARKER));
         }
+    }
+
+    #[test]
+    fn powershell_wrapper_selects_a_single_path_from_native_command_output() {
+        assert!(POWERSHELL_SCRIPT.contains("Select-Object -Last 1"));
     }
 
     #[test]

@@ -1,13 +1,14 @@
 //! Persistent catalog access, repository lookup, and application-state paths.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
 use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     cli::{Cli, FilterArgs},
@@ -39,6 +40,95 @@ pub fn state_dir() -> Result<PathBuf> {
         .state_dir()
         .unwrap_or_else(|| project.data_local_dir())
         .to_path_buf())
+}
+
+/// Return the machine-local repository-location sidecar for this catalog.
+///
+/// A custom catalog receives a sibling sidecar so test catalogs and portable
+/// catalogs do not write into the user's normal Shu state directory.
+pub fn local_state_path(cli: &Cli) -> Result<PathBuf> {
+    if let Some(catalog) = &cli.catalog {
+        return Ok(catalog.with_extension("local.json"));
+    }
+    Ok(state_dir()?.join("repositories.json"))
+}
+
+/// Look up a repository path observed on this machine, if one is recorded.
+pub fn remembered_local_path(cli: &Cli, identity: &str) -> Result<Option<PathBuf>> {
+    let identity = normalize_identity(identity)?;
+    Ok(load_local_state(cli)?
+        .repositories
+        .get(&identity)
+        .map(PathBuf::from))
+}
+
+/// Remember an existing local clone without adding machine-specific paths to
+/// the portable catalog.
+pub fn remember_local_path(cli: &Cli, identity: &str, path: &Path) -> Result<()> {
+    let identity = normalize_identity(identity)?;
+    let path = crate::paths::absolute(path)?;
+    let mut state = load_local_state(cli)?;
+    state
+        .repositories
+        .insert(identity, path.display().to_string());
+    save_local_state(cli, &state)
+}
+
+/// Machine-local observations that are deliberately kept out of `shu.toml`.
+#[derive(Debug, Deserialize, Serialize)]
+struct LocalState {
+    /// Format version for forward-compatible local cache changes.
+    #[serde(default = "local_state_version")]
+    version: u32,
+    /// Last known working-tree path for each normalized repository identity.
+    #[serde(default)]
+    repositories: BTreeMap<String, String>,
+}
+
+impl Default for LocalState {
+    fn default() -> Self {
+        Self {
+            version: local_state_version(),
+            repositories: BTreeMap::new(),
+        }
+    }
+}
+
+/// Return the current local-state format version.
+const fn local_state_version() -> u32 {
+    1
+}
+
+/// Read the local observation sidecar, treating an absent file as empty state.
+fn load_local_state(cli: &Cli) -> Result<LocalState> {
+    let path = local_state_path(cli)?;
+    let data = match fs::read(&path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LocalState::default());
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("could not read local state {}", path.display()));
+        }
+    };
+    let state: LocalState = serde_json::from_slice(&data)
+        .with_context(|| format!("invalid local state {}", path.display()))?;
+    if state.version != local_state_version() {
+        bail!("unsupported local state version {}", state.version);
+    }
+    Ok(state)
+}
+
+/// Persist machine-local observations beside the selected catalog or state directory.
+fn save_local_state(cli: &Cli, state: &LocalState) -> Result<()> {
+    let path = local_state_path(cli)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("local state path has no parent directory"))?;
+    fs::create_dir_all(parent)?;
+    fs::write(&path, serde_json::to_vec_pretty(state)?)
+        .with_context(|| format!("could not write local state {}", path.display()))
 }
 
 /// Load and validate the selected catalog, returning its path and parsed data.

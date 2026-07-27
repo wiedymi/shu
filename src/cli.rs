@@ -92,6 +92,9 @@ pub enum Commands {
 #[derive(Args)]
 pub struct AddArgs {
     /// A normalized repository identity, Git URL, or `.` for the current repository.
+    ///
+    /// Local clones are remembered on this machine without moving them; add
+    /// `--migrate` to move a clean clone into Shu's managed root.
     #[arg(value_name = "REPOSITORY")]
     pub source: String,
     /// Lifecycle state to record in the catalog.
