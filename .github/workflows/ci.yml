@@ -38,4 +38,4 @@ jobs:
           docker run --rm --entrypoint /bin/sh \
             -v "$GITHUB_WORKSPACE/tests/docker:/tests:ro" \
             -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
-            shu:test /tests/e2e.sh
+            shu:test -c 'sh /tests/e2e.sh'
