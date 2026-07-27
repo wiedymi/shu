@@ -12,8 +12,8 @@ use crate::model::Lifecycle;
     name = "shu",
     version,
     about = "A tiny, declarative, agent-friendly repository library",
-    long_about = "Shu keeps a portable catalog of Git repositories, restores missing clones into predictable paths, and lets people and agents resolve repositories reliably.",
-    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu add . --migrate --dry-run\n  shu restore github.com/your-account/repository-library\n  shu ensure api --path-only"
+    long_about = "Shu keeps one readable catalog of Git repositories, restores missing clones into predictable paths, and lets people and agents resolve repositories reliably.",
+    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu add . --migrate --dry-run\n  shu locations api\n  shu restore github.com/your-account/repository-library\n  shu ensure api --path-only"
 )]
 pub struct Cli {
     /// Use a specific catalog rather than the active catalog.
@@ -74,6 +74,8 @@ pub enum Commands {
     Ensure(EnsureArgs),
     /// Print the local path of an existing catalogued repository.
     Path(SelectorArgs),
+    /// Show known local clone paths or choose the preferred clone for a repository.
+    Locations(LocationsArgs),
     /// List catalogued repositories with optional filters.
     List(ListArgs),
     /// Change only a repository's declared lifecycle state.
@@ -93,8 +95,8 @@ pub enum Commands {
 pub struct AddArgs {
     /// A normalized repository identity, Git URL, or `.` for the current repository.
     ///
-    /// Local clones are remembered on this machine without moving them; add
-    /// `--migrate` to move a clean clone into Shu's managed root.
+    /// Local clones are recorded in the repository's `paths` list without
+    /// moving them; add `--migrate` to move a clean clone into Shu's managed root.
     #[arg(value_name = "REPOSITORY")]
     pub source: String,
     /// Lifecycle state to record in the catalog.
@@ -214,6 +216,16 @@ pub struct EnsureArgs {
 pub struct SelectorArgs {
     /// Full identity, unique suffix, or unique repository name.
     pub selector: String,
+}
+
+/// Arguments for `shu locations`.
+#[derive(Args)]
+pub struct LocationsArgs {
+    /// Full identity, unique suffix, or unique repository name.
+    pub selector: String,
+    /// Make one already known local clone the preferred path for this repository.
+    #[arg(long, value_name = "PATH")]
+    pub primary: Option<PathBuf>,
 }
 
 /// Arguments for `shu list`.

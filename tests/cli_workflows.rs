@@ -202,10 +202,7 @@ fn picks_a_local_repository_without_an_external_fuzzy_finder() {
         .join("github.com")
         .join("example-org")
         .join("api");
-    assert_eq!(
-        normalize_path(String::from_utf8(picked.stdout).unwrap().trim()),
-        normalize_path(&expected.to_string_lossy())
-    );
+    assert_same_path(String::from_utf8(picked.stdout).unwrap().trim(), &expected);
 }
 
 #[test]
@@ -345,7 +342,7 @@ fn records_an_existing_local_clone_without_migrating_or_overwriting_metadata() {
     let report = String::from_utf8(status.stdout).unwrap();
     assert!(report.contains("PARKED"));
     assert!(report.contains("present"));
-    assert!(report.contains("Local:"));
+    assert!(report.contains("Clones:"));
     assert!(report.contains("Keep the first working prototype."));
 
     fixture
@@ -357,6 +354,119 @@ fn records_an_existing_local_clone_without_migrating_or_overwriting_metadata() {
             "--clear-note",
         ])
         .assert_success();
+}
+
+#[test]
+fn records_multiple_clones_in_the_catalog_and_discovers_git_worktrees() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_catalog("library.toml");
+    let second = fixture.temp.path().join("second-clone");
+    let linked = fixture.temp.path().join("linked-worktree");
+
+    run_git(
+        fixture.temp.path(),
+        ["clone", fixture.seed.to_str().unwrap()],
+        Some(&second),
+    );
+    run_git(
+        &second,
+        [
+            "remote",
+            "set-url",
+            "origin",
+            "git@github.com:example-org/api.git",
+        ],
+        None,
+    );
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "add",
+            fixture.seed.to_str().unwrap(),
+        ])
+        .assert_success();
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "add",
+            second.to_str().unwrap(),
+        ])
+        .assert_success();
+
+    let saved: toml::Value = toml::from_str(&fs::read_to_string(&catalog).unwrap()).unwrap();
+    let repo = &saved["repos"][0];
+    assert_eq!(repo["paths"].as_array().unwrap().len(), 2);
+    assert_same_path(repo["primary"].as_str().unwrap(), &fixture.seed);
+
+    let locations = fixture.shu(["--catalog", catalog.to_str().unwrap(), "locations", "api"]);
+    locations.assert_success();
+    let locations = String::from_utf8(locations.stdout).unwrap();
+    assert!(locations.contains("present"));
+    assert!(locations.contains("second-clone"));
+
+    let second_pick = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "second-clone",
+        "--path-only",
+    ]);
+    second_pick.assert_success();
+    assert_same_path(
+        String::from_utf8(second_pick.stdout).unwrap().trim(),
+        &second,
+    );
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "locations",
+            "api",
+            "--primary",
+            second.to_str().unwrap(),
+        ])
+        .assert_success();
+    let primary = fixture.shu(["--catalog", catalog.to_str().unwrap(), "path", "api"]);
+    primary.assert_success();
+    assert_same_path(String::from_utf8(primary.stdout).unwrap().trim(), &second);
+
+    let primary_pick = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "api",
+        "--path-only",
+    ]);
+    primary_pick.assert_success();
+    assert_same_path(
+        String::from_utf8(primary_pick.stdout).unwrap().trim(),
+        &second,
+    );
+
+    run_git(
+        &fixture.seed,
+        ["worktree", "add", "--detach"],
+        Some(&linked),
+    );
+    let worktree_pick = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "linked-worktree",
+        "--path-only",
+    ]);
+    worktree_pick.assert_success();
+    assert_same_path(
+        String::from_utf8(worktree_pick.stdout).unwrap().trim(),
+        &linked,
+    );
 }
 
 #[test]

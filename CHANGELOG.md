@@ -7,13 +7,31 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-07-27
+
+### Added
+
+- Multiple local clone paths and an explicit preferred clone are now stored
+  directly in each repository entry's `paths` and `primary` fields in the one
+  `shu.toml` file.
+- `shu locations <repository>` shows all recorded clones and dynamically
+  discovered real Git worktrees. `--primary <path>` selects the clone used by
+  `shu path`, `shu ensure`, and the first picker result.
+- The picker now includes linked Git worktrees without storing them in TOML.
+
+### Changed
+
+- `shu add .` appends the current clone to its catalog entry instead of
+  replacing a previously recorded clone. `shu add . --migrate` replaces the
+  moved path and makes the managed destination primary.
+
 ## [0.1.8] - 2026-07-27
 
 ### Changed
 
-- `shu add .` now records an existing clone as machine-local observation state
-  instead of treating the canonical Shu path as its only location. The
-  portable catalog stays path-free, and `--migrate` remains the explicit move.
+- `shu add .` records an existing clone instead of treating the canonical Shu
+  path as its only location. This was superseded by the one-file `paths` model
+  in 0.1.9.
 
 ### Fixed
 

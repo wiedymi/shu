@@ -14,4 +14,4 @@ pub use pick::pick;
 pub use restore::{ensure, path_command, restore, update};
 pub use shell::shell;
 pub use upgrade::upgrade;
-pub use view::{list, status};
+pub use view::{list, locations_command, status};

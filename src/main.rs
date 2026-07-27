@@ -62,6 +62,7 @@ fn run() -> Result<()> {
         Some(Commands::Upgrade(args)) => commands::upgrade(args),
         Some(Commands::Ensure(args)) => commands::ensure(&cli, args),
         Some(Commands::Path(args)) => commands::path_command(&cli, args),
+        Some(Commands::Locations(args)) => commands::locations_command(&cli, args),
         Some(Commands::List(args)) => commands::list(&cli, args),
         Some(Commands::State(args)) => commands::change_state(&cli, &args.selector, args.state),
         Some(Commands::Archive(args)) => {
