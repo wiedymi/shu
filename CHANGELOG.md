@@ -7,6 +7,13 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-27
+
+### Fixed
+
+- Install the macOS/Linux release binary directly so the shell installer also
+  works on minimal systems without `tar` and `xz` installed.
+
 ## [0.1.1] - 2026-07-27
 
 ### Fixed
@@ -51,7 +58,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/wiedymi/shu/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/wiedymi/shu/compare/v0.1.0...v0.1.1
 [0.1.0-rc.3]: https://github.com/wiedymi/shu/compare/v0.1.0-rc.2...v0.1.0-rc.3
 [0.1.0-rc.1]: https://github.com/wiedymi/shu/releases/tag/v0.1.0-rc.1

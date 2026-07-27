@@ -28,7 +28,9 @@ case "$(uname -m)" in
 esac
 
 target="${architecture}-${operating_system}"
-asset="shu-${target}.tar.xz"
+# Releases also publish an uncompressed executable. Installing it directly
+# avoids requiring tar or xz on otherwise clean Linux machines.
+asset="shu-${target}"
 if [ "$version" = "latest" ]; then
     download_base="https://github.com/${repository}/releases/latest/download"
 else
@@ -51,10 +53,10 @@ fi
 
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/shu.XXXXXX")"
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
-archive="$temporary_directory/$asset"
+binary="$temporary_directory/shu"
 checksums="$temporary_directory/SHA256SUMS"
 info "Downloading $asset"
-download "$download_base/$asset" "$archive"
+download "$download_base/$asset" "$binary"
 info "Downloading SHA256SUMS"
 download "$download_base/SHA256SUMS" "$checksums"
 
@@ -65,19 +67,18 @@ if [ -z "$expected" ]; then
     exit 1
 fi
 if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$archive" | awk '{ print $1 }')"
+    actual="$(sha256sum "$binary" | awk '{ print $1 }')"
 else
-    actual="$(shasum -a 256 "$archive" | awk '{ print $1 }')"
+    actual="$(shasum -a 256 "$binary" | awk '{ print $1 }')"
 fi
 if [ "$expected" != "$actual" ]; then
     echo "error: checksum verification failed for $asset" >&2
     exit 1
 fi
 
-info "Extracting"
-tar -xJf "$archive" -C "$temporary_directory"
+info "Installing"
 mkdir -p "$install_dir"
-install -m 755 "$temporary_directory/shu" "$install_dir/shu"
+install -m 755 "$binary" "$install_dir/shu"
 success "Installed Shu to $install_dir/shu"
 case ":${PATH}:" in
     *":${install_dir}:"*) ;;
