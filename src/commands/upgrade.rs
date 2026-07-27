@@ -2,6 +2,7 @@
 
 use std::{
     env, fs,
+    io::{self, IsTerminal, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,6 +13,7 @@ use crate::{cli::UpgradeArgs, hash::sha256_hex};
 use anyhow::{Context, Result, anyhow, bail};
 
 const RELEASE_REPOSITORY: &str = "wiedymi/shu";
+const PROGRESS_INTERVAL_BYTES: u64 = 256 * 1024;
 
 /// Download a verified Shu release and replace the currently running binary.
 ///
@@ -24,14 +26,22 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     let current = env::current_exe().context("could not determine Shu executable path")?;
     let asset = format!("shu-{target}{}", executable_extension());
     let base = release_base(args.version.as_deref());
+    eprintln!("\nShu upgrade\n");
+    eprintln!("  Platform: {target}");
+    eprintln!("  Release: {}", args.version.as_deref().unwrap_or("latest"));
     let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("shu/", env!("CARGO_PKG_VERSION")))
         .build()?;
+    eprintln!("  Downloading SHA256SUMS");
     let manifest = get_text(&client, &format!("{base}/SHA256SUMS"))?;
+    eprintln!("  Reading release manifest");
     let expected = checksum_for(&manifest, &asset)?;
-    let binary = get_bytes(&client, &format!("{base}/{asset}"))?;
+    eprintln!("  Downloading {asset}");
+    let binary = get_bytes(&client, &format!("{base}/{asset}"), &asset)?;
+    eprintln!("  Verifying checksum");
     verify_checksum(&binary, &expected, &asset)?;
 
+    eprintln!("  Installing");
     let staged = staged_path(&current)?;
     fs::write(&staged, binary)
         .with_context(|| format!("could not write downloaded binary {}", staged.display()))?;
@@ -42,7 +52,7 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     #[cfg(not(windows))]
     replace_now(&current, &staged)?;
 
-    println!("Shu upgrade downloaded successfully.");
+    println!("✓ Shu upgrade downloaded successfully.");
     #[cfg(windows)]
     println!(
         "It will replace {} after this process exits.",
@@ -99,9 +109,9 @@ fn get_text(client: &reqwest::blocking::Client, url: &str) -> Result<String> {
         .context("release manifest was not valid text")
 }
 
-/// Download binary data from an HTTPS release asset with an informative error.
-fn get_bytes(client: &reqwest::blocking::Client, url: &str) -> Result<Vec<u8>> {
-    client
+/// Download a binary release asset while reporting its progress to the terminal.
+fn get_bytes(client: &reqwest::blocking::Client, url: &str, asset: &str) -> Result<Vec<u8>> {
+    let mut response = client
         .get(url)
         .send()
         .with_context(|| format!("could not download {url}"))?
@@ -110,10 +120,110 @@ fn get_bytes(client: &reqwest::blocking::Client, url: &str) -> Result<Vec<u8>> {
             format!(
                 "release asset was unavailable: {url}. Check your internet connection and release access"
             )
-        })?
-        .bytes()
-        .map(|body| body.to_vec())
-        .context("could not read downloaded binary")
+        })?;
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or_default();
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut progress = DownloadProgress::new(asset, response.content_length());
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .context("could not read downloaded binary")?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        progress.advance(read as u64)?;
+    }
+    progress.finish()?;
+    Ok(bytes)
+}
+
+/// Render compact, rate-limited binary download progress on standard error.
+struct DownloadProgress<'a> {
+    /// Human-readable release asset name.
+    asset: &'a str,
+    /// Advertised response size, when the server provides one.
+    total: Option<u64>,
+    /// Number of bytes received so far.
+    downloaded: u64,
+    /// Number of bytes shown in the previous update.
+    last_rendered: u64,
+    /// Whether standard error supports an in-place progress line.
+    interactive: bool,
+}
+
+impl<'a> DownloadProgress<'a> {
+    /// Create a reporter for one response body.
+    fn new(asset: &'a str, total: Option<u64>) -> Self {
+        Self {
+            asset,
+            total,
+            downloaded: 0,
+            last_rendered: 0,
+            interactive: io::stderr().is_terminal(),
+        }
+    }
+
+    /// Record downloaded bytes and refresh an interactive progress line when useful.
+    fn advance(&mut self, count: u64) -> Result<()> {
+        self.downloaded += count;
+        if self.interactive && self.downloaded - self.last_rendered >= PROGRESS_INTERVAL_BYTES {
+            self.render()?;
+        }
+        Ok(())
+    }
+
+    /// Complete the progress display with a final, stable line.
+    fn finish(&mut self) -> Result<()> {
+        if self.interactive {
+            self.render()?;
+            eprintln!();
+        } else {
+            eprintln!(
+                "  Downloaded {} ({})",
+                self.asset,
+                human_size(self.downloaded)
+            );
+        }
+        Ok(())
+    }
+
+    /// Rewrite one interactive line with the transferred byte count and percentage.
+    fn render(&mut self) -> Result<()> {
+        let detail = match self.total {
+            Some(total) if total > 0 => format!(
+                "{} / {} ({}%)",
+                human_size(self.downloaded),
+                human_size(total),
+                self.downloaded.saturating_mul(100) / total
+            ),
+            _ => human_size(self.downloaded),
+        };
+        eprint!("\r  Downloading {}: {detail}", self.asset);
+        io::stderr().flush()?;
+        self.last_rendered = self.downloaded;
+        Ok(())
+    }
+}
+
+/// Format a byte count for a short human-facing progress message.
+fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
 }
 
 /// Extract one hexadecimal checksum from a standard `SHA256SUMS` manifest.
@@ -208,5 +318,12 @@ mod tests {
         assert!(release_base(None).ends_with("releases/latest/download"));
         assert!(release_base(Some("0.1.0")).ends_with("releases/download/v0.1.0"));
         assert!(release_base(Some("v0.1.0")).ends_with("releases/download/v0.1.0"));
+    }
+
+    #[test]
+    fn formats_download_sizes_for_humans() {
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(1536), "1.5 KiB");
+        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MiB");
     }
 }
