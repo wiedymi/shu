@@ -1,3 +1,5 @@
+//! Repository-root expansion and canonical local-path construction.
+
 use std::path::{Path, PathBuf};
 
 use crate::{

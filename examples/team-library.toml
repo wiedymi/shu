@@ -1,0 +1,20 @@
+# A catalog can also be shared by a team. Restore one tag at a time when needed:
+# shu restore ./examples/team-library.toml --tag backend
+
+version = 1
+root = "~/Code"
+
+[[repos]]
+source = "github.com/example-org/api"
+state = "active"
+tags = ["team", "backend"]
+
+[[repos]]
+source = "github.com/example-org/web-client"
+state = "active"
+tags = ["team", "frontend"]
+
+[[repos]]
+source = "github.com/example-org/architecture-notes"
+state = "reference"
+tags = ["team", "documentation"]

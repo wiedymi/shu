@@ -1,3 +1,5 @@
+//! Catalog-source resolution for local files, direct URLs, Gists, and Git repositories.
+
 use std::{fs, path::Path, process::Command};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -5,6 +7,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{catalog::state_dir, identity::normalize_identity};
 
+/// Resolve a supported catalog source into its TOML text.
+///
+/// A source may be a local path, direct TOML URL, Gist URL, or Git repository.
+/// Git-backed catalogs use a Shu-owned cache so user repositories are never
+/// modified while refreshing a source.
 pub fn resolve(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Result<String> {
     if Path::new(source).is_file() {
         return fs::read_to_string(source)

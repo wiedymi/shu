@@ -1,10 +1,29 @@
+//! Shu is a small, declarative library for local Git repositories.
+//!
+//! The binary is the primary public interface. Run `shu --help` for an
+//! overview, or generate implementation documentation with:
+//!
+//! ```text
+//! cargo doc --no-deps --document-private-items --open
+//! ```
+
+#![warn(missing_docs)]
+
+/// Catalog storage, selection, and configuration helpers.
 mod catalog;
+/// Command-line parsing and help text.
 mod cli;
+/// Implementations for user-facing CLI commands.
 mod commands;
+/// Safe wrappers around the installed Git executable.
 mod git;
+/// Git remote and repository-identity normalization.
 mod identity;
+/// Serializable catalog data structures.
 mod model;
+/// Filesystem path derivation helpers.
 mod paths;
+/// Loading catalogs from files, URLs, Gists, and Git repositories.
 mod sources;
 
 use anyhow::Result;

@@ -1,5 +1,11 @@
+//! Normalization for common HTTPS and SSH Git remote formats.
+
 use anyhow::{Context, Result, anyhow, bail};
 
+/// Normalize a common Git remote form into `host/namespace/repository`.
+///
+/// HTTPS, SSH URL, SCP-style SSH, and already-normalized forms are accepted.
+/// Transport-specific syntax and a final `.git` suffix are removed.
 pub fn normalize_identity(input: &str) -> Result<String> {
     let raw = input.trim().trim_end_matches('/').trim_end_matches(".git");
     let (host, path) = if let Some(rest) = raw.strip_prefix("git@") {
@@ -38,16 +44,19 @@ mod tests {
     #[test]
     fn normalizes_common_remote_forms() {
         for value in [
-            "https://github.com/wiedymi/shu.git",
-            "git@github.com:wiedymi/shu.git",
-            "ssh://git@github.com/wiedymi/shu.git",
-            "github.com/wiedymi/shu",
+            "https://github.com/acme/widgets.git",
+            "git@github.com:acme/widgets.git",
+            "ssh://git@github.com/acme/widgets.git",
+            "github.com/acme/widgets",
         ] {
-            assert_eq!(normalize_identity(value).unwrap(), "github.com/wiedymi/shu");
+            assert_eq!(
+                normalize_identity(value).unwrap(),
+                "github.com/acme/widgets"
+            );
         }
     }
     #[test]
     fn rejects_short_identity() {
-        assert!(normalize_identity("wiedymi/shu").is_err());
+        assert!(normalize_identity("acme/widgets").is_err());
     }
 }

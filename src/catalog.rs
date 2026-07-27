@@ -1,3 +1,5 @@
+//! Persistent catalog access, repository lookup, and application-state paths.
+
 use std::{
     collections::HashSet,
     fs,
@@ -139,4 +141,47 @@ pub fn unique(items: Vec<String>) -> Vec<String> {
 fn dirs() -> Result<ProjectDirs> {
     ProjectDirs::from("dev", "wiedymi", "shu")
         .ok_or_else(|| anyhow!("could not determine Shu configuration directory"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Lifecycle;
+
+    fn catalog() -> Catalog {
+        Catalog {
+            version: 1,
+            root: "~/Code".into(),
+            repos: vec![
+                Repo {
+                    source: "github.com/acme/widgets".into(),
+                    state: Lifecycle::Active,
+                    tags: vec![],
+                    note: None,
+                },
+                Repo {
+                    source: "github.com/acme/api".into(),
+                    state: Lifecycle::Parked,
+                    tags: vec![],
+                    note: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn resolves_a_unique_repository_name() {
+        assert_eq!(
+            select(&catalog(), "widgets").unwrap().source,
+            "github.com/acme/widgets"
+        );
+    }
+
+    #[test]
+    fn removes_duplicate_tags_without_reordering() {
+        assert_eq!(
+            unique(vec!["work".into(), "rust".into(), "work".into()]),
+            ["work", "rust"]
+        );
+    }
 }

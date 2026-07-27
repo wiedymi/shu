@@ -1,3 +1,8 @@
+//! Narrow, safe wrappers around the user's installed `git` executable.
+//!
+//! Using system Git preserves existing credential helpers and keeps Shu out of
+//! authentication and repository-transport concerns.
+
 use std::{
     fs,
     path::Path,

@@ -1,3 +1,8 @@
+//! User-facing command implementations.
+//!
+//! This module coordinates catalog, filesystem, Git, and source-resolution
+//! layers while leaving their low-level behavior in dedicated modules.
+
 use std::{
     collections::HashSet,
     fs,

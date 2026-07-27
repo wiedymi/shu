@@ -1,0 +1,23 @@
+# Copy this file to your own catalog, replace the example sources, and commit it
+# wherever you keep personal configuration.
+
+version = 1
+root = "~/Code"
+
+[[repos]]
+source = "github.com/your-account/main-app"
+state = "active"
+tags = ["personal", "product"]
+note = "Primary application"
+
+[[repos]]
+source = "github.com/your-account/experiment"
+state = "parked"
+tags = ["personal", "research"]
+note = "A paused experiment worth keeping"
+
+[[repos]]
+source = "github.com/example-org/reference-project"
+state = "reference"
+tags = ["research"]
+note = "Useful implementation reference"
