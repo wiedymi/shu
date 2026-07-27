@@ -2,15 +2,7 @@ name: Security
 
 on:
   push:
-    paths:
-      - Cargo.lock
-      - Cargo.toml
-      - .github/workflows/security.yml
   pull_request:
-    paths:
-      - Cargo.lock
-      - Cargo.toml
-      - .github/workflows/security.yml
   schedule:
     - cron: "17 9 * * 1"
   workflow_dispatch:
