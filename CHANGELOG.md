@@ -7,6 +7,13 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-27
+
+### Added
+
+- Clear upgrade stages and live download progress for `shu upgrade`, with a
+  final transferred-byte summary when output is not attached to a terminal.
+
 ## [0.1.3] - 2026-07-27
 
 ### Added
@@ -83,7 +90,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/wiedymi/shu/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/wiedymi/shu/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/wiedymi/shu/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/wiedymi/shu/compare/v0.1.0...v0.1.1
