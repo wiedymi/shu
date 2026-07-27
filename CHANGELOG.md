@@ -7,6 +7,22 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-27
+
+### Added
+
+- `shu shell init <shell>` now installs an idempotent, clearly marked
+  navigation wrapper into the selected shell's startup file. All supported
+  shells retain `--print` for manual setup and `--path` for an explicit file.
+
+### Fixed
+
+- Draw the fuzzy picker on the terminal stream while reserving stdout for the
+  selected path, so navigation wrappers can display the picker and capture the
+  destination at the same time.
+- Explain when no locally available repositories can be picked, including how
+  to restore or migrate a catalogued repository.
+
 ## [0.1.6] - 2026-07-27
 
 ### Changed

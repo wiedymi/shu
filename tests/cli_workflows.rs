@@ -220,7 +220,7 @@ fn emits_navigation_wrappers_for_supported_shells() {
         "posix",
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_shu"))
-            .args(["shell", "init", shell])
+            .args(["shell", "init", shell, "--print"])
             .output()
             .unwrap();
         output.assert_success();
@@ -250,8 +250,12 @@ fn initializes_a_missing_catalog_without_blocking_everyday_commands() {
         "pick",
         "--path-only",
     ]);
-    picked.assert_success();
-    assert!(picked.stdout.is_empty());
+    assert!(!picked.status.success());
+    assert!(
+        String::from_utf8(picked.stderr)
+            .unwrap()
+            .contains("no catalogued repositories are available")
+    );
 }
 
 #[test]
@@ -466,7 +470,7 @@ fn powershell_setup_command_is_evaluable_and_forwards_to_the_binary() {
     let binary_directory = binary.parent().unwrap();
     let quote = |path: &Path| path.to_string_lossy().replace('\'', "''");
     let command = format!(
-        "$env:Path = '{};' + $env:Path; Invoke-Expression ((& '{}' shell init pwsh) -join [Environment]::NewLine); shu --version",
+        "$env:Path = '{};' + $env:Path; Invoke-Expression ((& '{}' shell init pwsh --print) -join [Environment]::NewLine); shu --version",
         quote(binary_directory),
         quote(&binary),
     );
@@ -480,6 +484,28 @@ fn powershell_setup_command_is_evaluable_and_forwards_to_the_binary() {
             .unwrap()
             .starts_with("shu ")
     );
+}
+
+#[test]
+fn installs_shell_integration_idempotently_at_an_explicit_path() {
+    let fixture = Fixture::new();
+    let profile = fixture.temp.path().join("profiles").join("shu.ps1");
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_shu"));
+
+    for _ in 0..2 {
+        let output = Command::new(&binary)
+            .args(["shell", "init", "pwsh", "--path", profile.to_str().unwrap()])
+            .output()
+            .unwrap();
+        output.assert_success();
+    }
+
+    let content = fs::read_to_string(profile).unwrap();
+    assert_eq!(
+        content.matches("# >>> shu shell integration >>>").count(),
+        1
+    );
+    assert!(content.contains("pick --path-only"));
 }
 
 struct Fixture {

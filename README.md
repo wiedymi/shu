@@ -72,19 +72,27 @@ shu edit my-project --state parked --note "Paused until the next release"
 shu add . --migrate     # Move a clean local repository into ~/shu's layout
 ```
 
-To make bare `shu` open the picker, add its small shell wrapper once:
+To make bare `shu` open the picker, install its small shell wrapper once:
 
 ```sh
-# Bash, Zsh, or another POSIX shell
-eval "$(shu shell init bash)"
-
-# Fish
-shu shell init fish | source
+# Use bash, zsh, fish, nushell, or posix as appropriate.
+shu shell init bash
 ```
 
 ```powershell
-Invoke-Expression ((& shu shell init pwsh) -join [Environment]::NewLine)
+shu shell init pwsh
 ```
+
+Shu writes only a clearly marked block to the appropriate startup file and
+will replace that block safely when run again. Open a new terminal afterwards:
+a program cannot modify its parent shell's current session. To inspect or
+manage the wrapper yourself, use `shu shell init pwsh --print` or provide an
+explicit target with `shu shell init pwsh --path ./profile.ps1`.
+
+The picker only offers repositories that are actually present under Shu's
+managed root. If `shu status` shows a repository as **missing**, restore it
+with `shu ensure name`, or migrate its existing clean clone with
+`shu add . --migrate` before using bare `shu`.
 
 For scripts and agents:
 
