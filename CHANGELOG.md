@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-27
+
+### Fixed
+
+- Correct the Windows release ZIP layout and let the installer safely find a
+  nested `shu.exe` in older archives.
+- Add clear progress messages to the macOS/Linux and Windows installers.
+
 ## [0.1.0-rc.3] - 2026-07-27
 
 ### Added
@@ -43,6 +51,7 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.0-rc.3...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/wiedymi/shu/compare/v0.1.0...v0.1.1
 [0.1.0-rc.3]: https://github.com/wiedymi/shu/compare/v0.1.0-rc.2...v0.1.0-rc.3
 [0.1.0-rc.1]: https://github.com/wiedymi/shu/releases/tag/v0.1.0-rc.1
