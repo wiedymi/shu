@@ -88,6 +88,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" release/* \
+          prerelease=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" release/* "${prerelease[@]}" \
             --title "Shu ${GITHUB_REF_NAME#v}" \
             --generate-notes
