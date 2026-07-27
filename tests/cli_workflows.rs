@@ -290,6 +290,147 @@ fn explains_missing_repositories_and_edits_metadata_from_a_local_clone() {
         .assert_success();
 }
 
+#[test]
+fn migrates_a_clean_repository_into_shus_canonical_layout() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let expected = fixture
+        .root
+        .join("github.com")
+        .join("example-org")
+        .join("api");
+
+    let preview = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "add",
+        fixture.seed.to_str().unwrap(),
+        "--migrate",
+        "--dry-run",
+    ]);
+    preview.assert_success();
+    assert!(
+        fixture.seed.exists(),
+        "dry runs must not move the repository"
+    );
+    assert!(!expected.exists(), "dry runs must not create a destination");
+    assert!(
+        String::from_utf8(preview.stdout)
+            .unwrap()
+            .contains("Dry run: no files or catalog entries were changed.")
+    );
+
+    let migrated = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "--yes",
+        "add",
+        fixture.seed.to_str().unwrap(),
+        "--migrate",
+    ]);
+    migrated.assert_success();
+    assert!(
+        !fixture.seed.exists(),
+        "migration should move the source directory"
+    );
+    assert!(expected.join(".git").exists());
+    let output = String::from_utf8(migrated.stdout).unwrap();
+    assert!(output.contains("Working tree is clean"));
+    assert!(output.contains("Moved repository"));
+    assert!(output.contains("Added to catalog"));
+
+    let status = fixture.shu(["--catalog", catalog.to_str().unwrap(), "status"]);
+    status.assert_success();
+    assert!(
+        String::from_utf8(status.stdout)
+            .unwrap()
+            .contains("present")
+    );
+}
+
+#[test]
+fn migrates_an_already_catalogued_repository_without_overwriting_metadata() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_catalog("library.toml");
+    let expected = fixture
+        .root
+        .join("github.com")
+        .join("example-org")
+        .join("api");
+
+    let migrated = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "--yes",
+        "add",
+        fixture.seed.to_str().unwrap(),
+        "--migrate",
+    ]);
+    migrated.assert_success();
+    assert!(!fixture.seed.exists());
+    assert!(expected.join(".git").exists());
+    assert!(
+        String::from_utf8(migrated.stdout)
+            .unwrap()
+            .contains("Preserved existing catalog metadata")
+    );
+}
+
+#[test]
+fn refuses_to_migrate_a_repository_with_uncommitted_changes() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    fs::write(fixture.seed.join("uncommitted.txt"), "do not move\n").unwrap();
+
+    let migrated = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "--yes",
+        "add",
+        fixture.seed.to_str().unwrap(),
+        "--migrate",
+    ]);
+    assert!(!migrated.status.success());
+    assert!(fixture.seed.exists(), "dirty sources must stay in place");
+    assert!(
+        String::from_utf8(migrated.stderr)
+            .unwrap()
+            .contains("working tree has staged, unstaged, or untracked changes")
+    );
+}
+
+#[test]
+fn refuses_to_migrate_a_repository_with_linked_worktrees() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let linked_worktree = fixture.temp.path().join("linked-worktree");
+    run_git(
+        &fixture.seed,
+        ["worktree", "add", "--detach"],
+        Some(&linked_worktree),
+    );
+
+    let migrated = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "--yes",
+        "add",
+        fixture.seed.to_str().unwrap(),
+        "--migrate",
+    ]);
+
+    assert!(!migrated.status.success());
+    assert!(
+        fixture.seed.exists(),
+        "linked working trees must stay in place"
+    );
+    assert!(
+        String::from_utf8(migrated.stderr)
+            .unwrap()
+            .contains("repository has linked Git worktrees")
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn powershell_setup_command_is_evaluable_and_forwards_to_the_binary() {
@@ -372,6 +513,13 @@ impl Fixture {
         let path = self.temp.path().join(name);
         let root = self.root.to_string_lossy().replace('\\', "/");
         fs::write(&path, format!("version = 1\nroot = \"{root}\"\n\n[[repos]]\nsource = \"{IDENTITY}\"\nstate = \"active\"\ntags = [\"integration\"]\n")).unwrap();
+        path
+    }
+
+    fn write_empty_catalog(&self, name: &str) -> PathBuf {
+        let path = self.temp.path().join(name);
+        let root = self.root.to_string_lossy().replace('\\', "/");
+        fs::write(&path, format!("version = 1\nroot = \"{root}\"\n")).unwrap();
         path
     }
 

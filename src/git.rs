@@ -5,7 +5,7 @@
 
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -14,7 +14,31 @@ use anyhow::{Context, Result, anyhow, bail};
 
 /// Return whether a path is an accessible Git working tree.
 pub fn is_repo(path: &Path) -> bool {
-    output(path, ["rev-parse", "--is-inside-work-tree"]).is_ok()
+    output(path, ["rev-parse", "--is-inside-work-tree"]).is_ok_and(|value| value == "true")
+}
+
+/// Resolve a local path inside a Git working tree to its top-level directory.
+pub fn worktree_root(path: &Path) -> Result<PathBuf> {
+    if !is_repo(path) {
+        bail!("not a Git working tree: {}", path.display());
+    }
+    let root = PathBuf::from(output(path, ["rev-parse", "--show-toplevel"])?);
+    fs::canonicalize(&root)
+        .with_context(|| format!("could not resolve Git working tree {}", root.display()))
+}
+
+/// Return whether a working tree has no staged, unstaged, or untracked changes.
+pub fn is_clean(path: &Path) -> Result<bool> {
+    Ok(output(path, ["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty())
+}
+
+/// Return whether Git reports another linked working tree for this repository.
+pub fn has_linked_worktrees(path: &Path) -> Result<bool> {
+    let count = output(path, ["worktree", "list", "--porcelain"])?
+        .lines()
+        .filter(|line| line.starts_with("worktree "))
+        .count();
+    Ok(count > 1)
 }
 
 /// Run Git in a working directory and return trimmed standard output on success.

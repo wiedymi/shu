@@ -36,6 +36,12 @@ shu --catalog "$workspace/shu.toml" doctor | grep -q '^✓ catalog:'
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$path"
 shu --catalog "$workspace/shu.toml" --json list | grep -q '"observed_state": "present"'
 
+# Migration moves a clean working tree atomically into Shu's canonical layout.
+git -C "$workspace/seed" remote set-url origin 'git@github.com:example-org/migrated.git'
+shu --catalog "$workspace/shu.toml" --yes add "$workspace/seed" --migrate
+test ! -d "$workspace/seed"
+test -d "$workspace/library/github.com/example-org/migrated/.git"
+
 # Exercise the release installer against a locally generated, checksummed
 # release payload. The fake curl command gives the installer the same
 # command-line contract it has when downloading a GitHub Release.
