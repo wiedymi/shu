@@ -40,8 +40,8 @@ shu --catalog "$workspace/shu.toml" --json list | grep -q '"observed_state": "pr
 # release payload. The fake curl command gives the installer the same
 # command-line contract it has when downloading a GitHub Release.
 mkdir -p "$workspace/release-assets" "$workspace/fake-bin" "$workspace/installed"
-tar -C /usr/local/bin -cJf "$workspace/release-assets/shu-x86_64-unknown-linux-musl.tar.xz" shu
-(cd "$workspace/release-assets" && sha256sum shu-x86_64-unknown-linux-musl.tar.xz > SHA256SUMS)
+cp /usr/local/bin/shu "$workspace/release-assets/shu-x86_64-unknown-linux-musl"
+(cd "$workspace/release-assets" && sha256sum shu-x86_64-unknown-linux-musl > SHA256SUMS)
 cat > "$workspace/fake-bin/curl" <<'EOF'
 #!/bin/sh
 set -eu
