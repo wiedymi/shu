@@ -55,12 +55,16 @@ pub enum Commands {
     Add(AddArgs),
     /// Discover Git repositories below a directory.
     Scan(ScanArgs),
+    /// Check whether Git, the catalog, repository root, and source setup are ready to use.
+    Doctor(DoctorArgs),
     /// Compare the catalog with repositories available on this machine.
     Status(FilterArgs),
     /// Load a catalog source if provided, then clone missing repositories.
     Restore(RestoreArgs),
-    /// Refresh the currently configured remote catalog source.
+    /// Refresh the configured catalog source and restore any newly missing repositories.
     Update,
+    /// Download and install the latest verified Shu binary from GitHub Releases.
+    Upgrade(UpgradeArgs),
     /// Ensure a catalogued repository exists locally and print its path.
     Ensure(EnsureArgs),
     /// Print the local path of an existing catalogued repository.
@@ -107,6 +111,14 @@ pub struct ScanArgs {
     pub add: bool,
 }
 
+/// Arguments for `shu doctor`.
+#[derive(Args, Default)]
+pub struct DoctorArgs {
+    /// Resolve the remembered catalog source to confirm it is currently reachable.
+    #[arg(long)]
+    pub check_source: bool,
+}
+
 /// Shared tag and lifecycle filters.
 #[derive(Args, Default)]
 pub struct FilterArgs {
@@ -133,6 +145,14 @@ pub struct RestoreArgs {
     /// Limit restoration to a tag or lifecycle state.
     #[command(flatten)]
     pub filter: FilterArgs,
+}
+
+/// Arguments for `shu upgrade`.
+#[derive(Args, Default)]
+pub struct UpgradeArgs {
+    /// Release tag or version to install; defaults to the latest release.
+    #[arg(long, value_name = "VERSION")]
+    pub version: Option<String>,
 }
 
 /// Arguments for `shu ensure`.

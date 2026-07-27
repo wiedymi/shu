@@ -6,13 +6,41 @@ Keep the Git repositories you care about in a portable TOML catalog. Restore the
 
 ## Install
 
-Until the first release, build from source:
+Until the first tagged release, build from source:
 
 ```sh
-cargo install --path .
+cargo install --git https://github.com/wiedymi/shu
 ```
 
-Release channels will be GitHub Releases, a Homebrew tap, a Scoop bucket, and crates.io.
+Tagged releases publish verified archives and simple installers through GitHub
+Releases. The shell installer supports macOS and Linux; the PowerShell installer
+supports Windows:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/wiedymi/shu/releases/latest/download/shu-installer.sh | sh
+```
+
+```powershell
+irm https://github.com/wiedymi/shu/releases/latest/download/shu-installer.ps1 | iex
+```
+
+Both installers verify the downloaded archive against the release's
+`SHA256SUMS` file. Homebrew and Scoop are planned after the first release.
+The `shu` name is already taken on crates.io, so crates.io is not a planned
+distribution channel.
+
+After installing through GitHub Releases, update Shu itself without rerunning
+the installer:
+
+```sh
+shu upgrade
+shu upgrade --version 0.1.0
+```
+
+`shu upgrade` verifies the downloaded executable against `SHA256SUMS` before
+replacing the current binary. It is separate from `shu update`, which refreshes
+the configured repository catalog and restores any newly missing repositories.
 
 ## Quick start
 
@@ -21,6 +49,7 @@ shu init
 shu add github.com/example-org/widget-service --tag work --tag backend
 shu add . --state active --note "Current project"
 shu status
+shu doctor
 shu restore
 ```
 
@@ -72,6 +101,19 @@ repo_path="$(shu ensure github.com/example-org/widget-service --path-only)"
 ```
 
 `--path-only` emits exactly one absolute path on stdout; diagnostics use stderr. `shu list --json` provides a stable, versioned JSON format.
+
+## Setup diagnostics
+
+`shu doctor` checks Git, the active catalog, and whether the configured
+repository root is usable without changing repositories or making network
+requests. To also refresh and validate the remembered catalog source, run:
+
+```sh
+shu doctor --check-source
+```
+
+The latter may refresh Shu's private catalog cache but never changes your
+repository clones.
 
 ## Help and documentation
 

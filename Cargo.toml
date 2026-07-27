@@ -6,6 +6,8 @@ rust-version = "1.88"
 description = "A tiny, declarative, agent-friendly repository library"
 license = "MIT"
 repository = "https://github.com/wiedymi/shu"
+homepage = "https://github.com/wiedymi/shu"
+readme = "README.md"
 keywords = ["git", "repositories", "catalog", "cli", "agents"]
 categories = ["command-line-utilities", "development-tools"]
 

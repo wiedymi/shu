@@ -93,6 +93,41 @@ fn activates_a_local_catalog_source_and_refreshes_it_with_update() {
 }
 
 #[test]
+fn doctor_validates_a_restored_local_setup_and_its_source() {
+    let fixture = Fixture::new();
+    let source = fixture.write_catalog("portable-library.toml");
+    let active = fixture.temp.path().join("active.toml");
+
+    fixture
+        .shu([
+            "--catalog",
+            active.to_str().unwrap(),
+            "--yes",
+            "restore",
+            source.to_str().unwrap(),
+        ])
+        .assert_success();
+
+    let doctor = fixture.shu([
+        "--catalog",
+        active.to_str().unwrap(),
+        "doctor",
+        "--check-source",
+    ]);
+    doctor.assert_success();
+    let report = String::from_utf8(doctor.stdout).unwrap();
+    assert!(report.contains("✓ git:"));
+    assert!(report.contains("✓ catalog:"));
+    assert!(report.contains("✓ catalog source: reachable:"));
+
+    let json = fixture.shu(["--catalog", active.to_str().unwrap(), "--json", "doctor"]);
+    json.assert_success();
+    let report: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["checks"][0]["name"], "git");
+}
+
+#[test]
 fn picks_a_local_repository_without_an_external_fuzzy_finder() {
     let fixture = Fixture::new();
     let catalog = fixture.write_catalog("library.toml");

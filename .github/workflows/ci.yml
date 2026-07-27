@@ -22,6 +22,10 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
       - run: cargo build --release
+      - name: Test PowerShell installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/install.ps1 -InstallerPath scripts/install.ps1 -BinaryPath target/release/shu.exe
 
   docker:
     name: Docker end-to-end
@@ -29,4 +33,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build --tag shu:test .
-      - run: docker run --rm --entrypoint /bin/sh -v "${{ github.workspace }}/tests/docker:/tests:ro" shu:test /tests/e2e.sh
+      - run: docker run --rm --entrypoint /bin/sh -v "${{ github.workspace }}/tests/docker:/tests:ro" -v "${{ github.workspace }}/scripts:/scripts:ro" shu:test /tests/e2e.sh

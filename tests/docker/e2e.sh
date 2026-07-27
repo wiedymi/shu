@@ -32,5 +32,30 @@ shu --catalog "$workspace/shu.toml" --yes restore
 path="$(shu --catalog "$workspace/shu.toml" ensure api --path-only)"
 test "$path" = "$workspace/library/github.com/example-org/api"
 test -d "$path/.git"
+shu --catalog "$workspace/shu.toml" doctor | grep -q '^✓ catalog:'
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$path"
 shu --catalog "$workspace/shu.toml" --json list | grep -q '"observed_state": "present"'
+
+# Exercise the release installer against a locally generated, checksummed
+# release payload. The fake curl command gives the installer the same
+# command-line contract it has when downloading a GitHub Release.
+mkdir -p "$workspace/release-assets" "$workspace/fake-bin" "$workspace/installed"
+tar -C /usr/local/bin -cJf "$workspace/release-assets/shu-x86_64-unknown-linux-musl.tar.xz" shu
+(cd "$workspace/release-assets" && sha256sum shu-x86_64-unknown-linux-musl.tar.xz > SHA256SUMS)
+cat > "$workspace/fake-bin/curl" <<'EOF'
+#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --output) output="$2"; shift 2 ;;
+        *) url="$1"; shift ;;
+    esac
+done
+cp "$SHU_TEST_RELEASE_ASSETS/$(basename "$url")" "$output"
+EOF
+chmod +x "$workspace/fake-bin/curl"
+PATH="$workspace/fake-bin:$PATH" \
+SHU_TEST_RELEASE_ASSETS="$workspace/release-assets" \
+SHU_INSTALL_DIR="$workspace/installed" \
+/scripts/install.sh
+"$workspace/installed/shu" --version | grep -q '^shu '
