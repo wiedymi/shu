@@ -1,0 +1,51 @@
+use std::{
+    fs,
+    path::Path,
+    process::{Command, Stdio},
+};
+
+use crate::identity::normalize_identity;
+use anyhow::{Context, Result, anyhow, bail};
+
+pub fn is_repo(path: &Path) -> bool {
+    output(path, ["rev-parse", "--is-inside-work-tree"]).is_ok()
+}
+
+pub fn output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
+    let result = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .with_context(|| "could not run git; ensure Git is installed")?;
+    if !result.status.success() {
+        bail!(
+            "git command failed in {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&result.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8(result.stdout)?.trim().to_owned())
+}
+
+pub fn git_output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
+    output(dir, args)
+}
+
+pub fn clone(identity: &str, target: &Path) -> Result<()> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| anyhow!("target has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let remote = format!("https://{}.git", normalize_identity(identity)?);
+    let status = Command::new("git")
+        .args(["clone", "--", &remote])
+        .arg(target)
+        .stdin(Stdio::null())
+        .status()
+        .context("could not run git clone")?;
+    if !status.success() {
+        bail!("git clone failed for {identity}");
+    }
+    Ok(())
+}
