@@ -48,7 +48,14 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         return migrate_and_add(cli, args, &path, &mut catalog);
     }
     let identity = normalize_identity(&catalog::source_from_argument(&args.source)?)?;
+    let local_path = local_source_path(&args.source)?;
     if let Some(existing) = existing_repo(&catalog, &identity) {
+        if let Some(local_path) = local_path {
+            catalog::remember_local_path(cli, &identity, &local_path)?;
+            println!("Already catalogued {}", catalog::repo_name(existing));
+            println!("  Local clone: {}", local_path.display());
+            return Ok(());
+        }
         bail!(
             "{identity} is already in the catalog. To change its state or note, run `shu edit {} --state <state> --note <text>`",
             catalog::repo_name(existing)
@@ -57,6 +64,10 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     add_entry(&mut catalog, args, &identity);
     catalog::save(&path, &catalog)?;
     println!("Added {identity}");
+    if let Some(local_path) = local_path {
+        catalog::remember_local_path(cli, &identity, &local_path)?;
+        println!("  Local clone: {}", local_path.display());
+    }
     Ok(())
 }
 
@@ -79,7 +90,9 @@ fn migrate_and_add(cli: &Cli, args: &AddArgs, path: &Path, catalog: &mut Catalog
             println!("\nDry run: no files or catalog entries were changed.");
             return Ok(());
         }
-        return finish_catalog_add(path, catalog, args, &identity, existing, false);
+        finish_catalog_add(path, catalog, args, &identity, existing, false)?;
+        catalog::remember_local_path(cli, &identity, &destination)?;
+        return Ok(());
     }
     if destination.starts_with(&source) {
         bail!(
@@ -138,7 +151,8 @@ fn migrate_and_add(cli: &Cli, args: &AddArgs, path: &Path, catalog: &mut Catalog
         )
     })?;
     println!("  {} Moved repository", ui::success_marker());
-    finish_catalog_add(path, catalog, args, &identity, existing, true)
+    finish_catalog_add(path, catalog, args, &identity, existing, true)?;
+    catalog::remember_local_path(cli, &identity, &destination)
 }
 
 /// Return whether the source and destination reside on a filesystem that supports rename.
@@ -201,6 +215,23 @@ fn migration_source(value: &str) -> Result<PathBuf> {
         bail!("--migrate requires `.` or an existing local Git working tree, not {value}");
     }
     git::worktree_root(&requested)
+}
+
+/// Return a working-tree root when an add argument refers to a local clone.
+///
+/// A normal `shu add .` records this path in machine-local state. The portable
+/// catalog only keeps repository identity, leaving `--migrate` as the explicit
+/// operation that moves a clone into Shu's managed root.
+fn local_source_path(value: &str) -> Result<Option<PathBuf>> {
+    if value == "." || Path::new(value).exists() {
+        return git::worktree_root(&if value == "." {
+            std::env::current_dir()?
+        } else {
+            PathBuf::from(value)
+        })
+        .map(Some);
+    }
+    Ok(None)
 }
 
 /// Ask for explicit approval before a filesystem-moving migration.
@@ -376,7 +407,7 @@ fn import_discovered(cli: &Cli, found: &[(PathBuf, String)]) -> Result<()> {
         .filter_map(|repo| normalize_identity(&repo.source).ok())
         .collect();
     let mut added = 0;
-    for (_, identity) in found {
+    for (local_path, identity) in found {
         if known.insert(identity.clone()) {
             catalog.repos.push(Repo {
                 source: identity.clone(),
@@ -386,6 +417,7 @@ fn import_discovered(cli: &Cli, found: &[(PathBuf, String)]) -> Result<()> {
             });
             added += 1;
         }
+        catalog::remember_local_path(cli, identity, local_path)?;
     }
     catalog::save(&path, &catalog)?;
     println!("Added {added} repository entries to {}", path.display());

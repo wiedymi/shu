@@ -259,7 +259,7 @@ fn initializes_a_missing_catalog_without_blocking_everyday_commands() {
 }
 
 #[test]
-fn explains_missing_repositories_and_edits_metadata_from_a_local_clone() {
+fn records_an_existing_local_clone_without_migrating_or_overwriting_metadata() {
     let fixture = Fixture::new();
     let catalog = fixture.write_catalog("library.toml");
 
@@ -269,10 +269,48 @@ fn explains_missing_repositories_and_edits_metadata_from_a_local_clone() {
         "add",
         fixture.seed.to_str().unwrap(),
     ]);
-    assert!(!duplicate.status.success());
-    let duplicate_error = String::from_utf8(duplicate.stderr).unwrap();
-    assert!(duplicate_error.contains("already in the catalog"));
-    assert!(duplicate_error.contains("shu edit api --state <state> --note <text>"));
+    duplicate.assert_success();
+    assert!(
+        String::from_utf8(duplicate.stdout)
+            .unwrap()
+            .contains("Local clone:")
+    );
+    assert!(
+        !fixture
+            .root
+            .join("github.com")
+            .join("example-org")
+            .join("api")
+            .exists(),
+        "ordinary add must not move or clone the existing repository"
+    );
+
+    let ensured = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "ensure",
+        "api",
+        "--path-only",
+    ]);
+    ensured.assert_success();
+    assert_same_path(
+        String::from_utf8(ensured.stdout).unwrap().trim(),
+        &fixture.seed,
+    );
+
+    let picked = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "api",
+        "--path-only",
+    ]);
+    picked.assert_success();
+    assert_same_path(
+        String::from_utf8(picked.stdout).unwrap().trim(),
+        &fixture.seed,
+    );
 
     let mistaken_update = fixture.shu([
         "--catalog",
@@ -306,9 +344,8 @@ fn explains_missing_repositories_and_edits_metadata_from_a_local_clone() {
     status.assert_success();
     let report = String::from_utf8(status.stdout).unwrap();
     assert!(report.contains("PARKED"));
-    assert!(report.contains("missing"));
-    assert!(report.contains("Expected:"));
-    assert!(report.contains("shu ensure api"));
+    assert!(report.contains("present"));
+    assert!(report.contains("Local:"));
     assert!(report.contains("Keep the first working prototype."));
 
     fixture
@@ -654,4 +691,12 @@ fn serve_once(body: String) -> (String, thread::JoinHandle<()>) {
 
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/")
+}
+
+/// Compare paths after resolving platform-specific aliases such as macOS `/tmp`.
+fn assert_same_path(actual: &str, expected: &Path) {
+    assert_eq!(
+        fs::canonicalize(actual).unwrap(),
+        fs::canonicalize(expected).unwrap()
+    );
 }
