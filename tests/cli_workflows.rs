@@ -56,6 +56,31 @@ fn restores_a_catalog_and_exposes_the_repository_to_agents() {
 }
 
 #[test]
+fn restore_continues_after_an_inaccessible_repository_and_explains_the_failure() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_catalog_with_inaccessible_repository("library.toml");
+
+    let restored = fixture.shu(["--catalog", catalog.to_str().unwrap(), "--yes", "restore"]);
+    assert!(
+        !restored.status.success(),
+        "restore should report the inaccessible repository"
+    );
+    assert!(
+        fixture
+            .root
+            .join("github.com")
+            .join("example-org")
+            .join("api")
+            .join(".git")
+            .exists(),
+        "restore should continue with repositories that are accessible"
+    );
+    let stderr = String::from_utf8(restored.stderr).unwrap();
+    assert!(stderr.contains("Check your internet connection and Git access"));
+    assert!(stderr.contains("repositories that were accessible were restored"));
+}
+
+#[test]
 fn activates_a_local_catalog_source_and_refreshes_it_with_update() {
     let fixture = Fixture::new();
     let source = fixture.write_catalog("portable-library.toml");
@@ -218,6 +243,16 @@ impl Fixture {
         let path = self.temp.path().join(name);
         let root = self.root.to_string_lossy().replace('\\', "/");
         fs::write(&path, format!("version = 1\nroot = \"{root}\"\n\n[[repos]]\nsource = \"{IDENTITY}\"\nstate = \"active\"\ntags = [\"integration\"]\n")).unwrap();
+        path
+    }
+
+    fn write_catalog_with_inaccessible_repository(&self, name: &str) -> PathBuf {
+        let path = self.write_catalog(name);
+        let mut content = fs::read_to_string(&path).unwrap();
+        content.push_str(
+            "\n[[repos]]\nsource = \"github.com/example-org/unavailable\"\nstate = \"active\"\n",
+        );
+        fs::write(&path, content).unwrap();
         path
     }
 

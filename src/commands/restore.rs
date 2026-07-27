@@ -29,12 +29,17 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
         return Ok(());
     }
     fs::create_dir_all(root_path(&catalog)?)?;
-    let failures = repos
-        .into_iter()
-        .filter_map(|repo| restore_one(&catalog, repo).err())
-        .count();
+    let mut failures = 0;
+    for repo in repos {
+        if let Err(error) = restore_one(&catalog, repo) {
+            eprintln!("! {}: {error:#}", repo.source);
+            failures += 1;
+        }
+    }
     if failures > 0 {
-        bail!("restore completed with {failures} conflict(s) or clone failure(s)");
+        bail!(
+            "restore completed with {failures} failure(s); repositories that were accessible were restored. Review the messages above, then check the affected path, internet connection, or Git access."
+        );
     }
     Ok(())
 }

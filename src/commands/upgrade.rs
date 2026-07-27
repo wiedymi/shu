@@ -90,7 +90,11 @@ fn get_text(client: &reqwest::blocking::Client, url: &str) -> Result<String> {
         .send()
         .with_context(|| format!("could not download {url}"))?
         .error_for_status()
-        .with_context(|| format!("release asset was unavailable: {url}"))?
+        .with_context(|| {
+            format!(
+                "release asset was unavailable: {url}. Check your internet connection and release access"
+            )
+        })?
         .text()
         .context("release manifest was not valid text")
 }
@@ -102,7 +106,11 @@ fn get_bytes(client: &reqwest::blocking::Client, url: &str) -> Result<Vec<u8>> {
         .send()
         .with_context(|| format!("could not download {url}"))?
         .error_for_status()
-        .with_context(|| format!("release asset was unavailable: {url}"))?
+        .with_context(|| {
+            format!(
+                "release asset was unavailable: {url}. Check your internet connection and release access"
+            )
+        })?
         .bytes()
         .map(|body| body.to_vec())
         .context("could not read downloaded binary")

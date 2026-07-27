@@ -47,14 +47,17 @@ pub fn clone(identity: &str, target: &Path) -> Result<()> {
         .ok_or_else(|| anyhow!("target has no parent"))?;
     fs::create_dir_all(parent)?;
     let remote = format!("https://{}.git", normalize_identity(identity)?);
-    let status = Command::new("git")
+    let output = Command::new("git")
         .args(["clone", "--", &remote])
         .arg(target)
         .stdin(Stdio::null())
-        .status()
+        .output()
         .context("could not run git clone")?;
-    if !status.success() {
-        bail!("git clone failed for {identity}");
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        bail!(
+            "could not clone {identity}. Check your internet connection and Git access to this repository. Git said: {detail}"
+        );
     }
     Ok(())
 }
