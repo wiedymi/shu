@@ -17,6 +17,8 @@ mod cli;
 mod commands;
 /// Safe wrappers around the installed Git executable.
 mod git;
+/// Hashing helpers for cache keys and release verification.
+mod hash;
 /// Git remote and repository-identity normalization.
 mod identity;
 /// Serializable catalog data structures.

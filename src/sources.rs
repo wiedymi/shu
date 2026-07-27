@@ -2,10 +2,8 @@
 
 use std::{fs, path::Path, process::Command};
 
+use crate::{catalog::state_dir, hash::sha256_hex, identity::normalize_identity};
 use anyhow::{Context, Result, anyhow, bail};
-use sha2::{Digest, Sha256};
-
-use crate::{catalog::state_dir, identity::normalize_identity};
 
 /// Resolve a supported catalog source into its TOML text.
 ///
@@ -31,9 +29,7 @@ pub fn resolve(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Resu
 /// Fetch a Git-backed catalog into Shu-owned cache state and read its TOML file.
 fn fetch_repository(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Result<String> {
     let identity = normalize_identity(source)?;
-    let mut hasher = Sha256::new();
-    hasher.update(source.as_bytes());
-    let key = format!("{:x}", hasher.finalize());
+    let key = sha256_hex(source.as_bytes());
     let cache = state_dir()?.join("catalogs").join(&key[..16]);
     if !cache.exists() {
         fs::create_dir_all(cache.parent().unwrap())?;

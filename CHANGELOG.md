@@ -23,6 +23,13 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Reject repository identities that could escape the configured repository root.
 - Pin GitHub Actions to immutable revisions; Dependabot maintains the pins.
 
+### Changed
+
+- Update direct Rust dependencies and pinned GitHub Actions to their current
+  supported releases.
+- Make the Docker end-to-end image capable of exercising `.tar.xz` installer
+  payloads.
+
 ## [0.1.0] - 2026-07-27
 
 ### Added

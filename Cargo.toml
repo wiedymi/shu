@@ -14,13 +14,13 @@ categories = ["command-line-utilities", "development-tools"]
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
-crossterm = "0.28"
+crossterm = "0.29"
 directories = "6.0"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
-toml = "0.8"
+sha2 = "0.11"
+toml = "1.1"
 url = "2.5"
 walkdir = "2.5"
 

@@ -3,13 +3,13 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
-use anyhow::{Context, Result, anyhow, bail};
-use sha2::{Digest, Sha256};
+#[cfg(windows)]
+use std::process::Command;
 
-use crate::cli::UpgradeArgs;
+use crate::{cli::UpgradeArgs, hash::sha256_hex};
+use anyhow::{Context, Result, anyhow, bail};
 
 const RELEASE_REPOSITORY: &str = "wiedymi/shu";
 
@@ -131,7 +131,7 @@ fn checksum_for(manifest: &str, asset: &str) -> Result<String> {
 
 /// Verify that downloaded bytes match their published SHA-256 digest.
 fn verify_checksum(bytes: &[u8], expected: &str, asset: &str) -> Result<()> {
-    let actual = format!("{:x}", Sha256::digest(bytes));
+    let actual = sha256_hex(bytes);
     if actual.eq_ignore_ascii_case(expected) {
         Ok(())
     } else {
