@@ -15,6 +15,14 @@ and releases use [Semantic Versioning](https://semver.org/).
   coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
   assertions.
 
+## [0.1.21] - 2026-07-28
+
+### Added
+
+- `shu remove <repository>` as the clear, safe name for removing a repository
+  from Shu's catalog only; it never deletes a local checkout or remote.
+  `shu forget` remains a compatibility alias.
+
 ## [0.1.20] - 2026-07-28
 
 ### Fixed
@@ -329,7 +337,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.20...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.21...HEAD
+[0.1.21]: https://github.com/wiedymi/shu/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/wiedymi/shu/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/wiedymi/shu/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/wiedymi/shu/compare/v0.1.17...v0.1.18

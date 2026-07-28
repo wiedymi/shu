@@ -71,7 +71,7 @@ fn run() -> Result<()> {
         Some(Commands::Archive(args)) => {
             commands::change_state(&cli, &args.selector, model::Lifecycle::Archived)
         }
-        Some(Commands::Forget(args)) => commands::forget(&cli, args),
+        Some(Commands::Remove(args)) => commands::forget(&cli, args),
         Some(Commands::Pick(args)) => commands::pick(&cli, args),
         Some(Commands::Shell(args)) => commands::shell(&args.command),
     }
