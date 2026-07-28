@@ -15,6 +15,14 @@ and releases use [Semantic Versioning](https://semver.org/).
   coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
   assertions.
 
+## [0.1.18] - 2026-07-28
+
+### Fixed
+
+- `shu upgrade` no longer depends on GitHub's rate-limited REST API when
+  resolving `latest`; it derives the exact release tag from the release
+  manifest redirect that it already downloads and verifies.
+
 ## [0.1.17] - 2026-07-28
 
 ### Fixed
@@ -304,7 +312,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.17...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.18...HEAD
+[0.1.18]: https://github.com/wiedymi/shu/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/wiedymi/shu/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/wiedymi/shu/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/wiedymi/shu/compare/v0.1.14...v0.1.15
