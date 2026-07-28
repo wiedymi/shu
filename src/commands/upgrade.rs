@@ -2,14 +2,14 @@
 
 use std::{
     env, fs,
-    io::{self, IsTerminal, Read, Write},
+    io::Read,
     path::{Path, PathBuf},
 };
 
 #[cfg(windows)]
 use std::process::Command;
 
-use crate::{cli::UpgradeArgs, hash::sha256_hex, http};
+use crate::{cli::UpgradeArgs, hash::sha256_hex, http, ui};
 use anyhow::{Context, Result, anyhow, bail};
 
 const RELEASE_REPOSITORY: &str = "wiedymi/shu";
@@ -26,20 +26,20 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     let current = env::current_exe().context("could not determine Shu executable path")?;
     let asset = format!("shu-{target}{}", executable_extension());
     let base = release_base(args.version.as_deref());
-    eprintln!("\nShu upgrade\n");
-    eprintln!("  Platform: {target}");
-    eprintln!("  Release: {}", args.version.as_deref().unwrap_or("latest"));
+    ui::heading("Upgrade");
+    ui::detail("platform", target);
+    ui::detail("release", args.version.as_deref().unwrap_or("latest"));
     let client = http::agent();
-    eprintln!("  Downloading SHA256SUMS");
+    ui::working("Downloading SHA256SUMS");
     let manifest = get_text(&client, &format!("{base}/SHA256SUMS"))?;
-    eprintln!("  Reading release manifest");
+    ui::working("Reading release manifest");
     let expected = checksum_for(&manifest, &asset)?;
-    eprintln!("  Downloading {asset}");
+    ui::working(format!("Downloading {asset}"));
     let binary = get_bytes(&client, &format!("{base}/{asset}"), &asset)?;
-    eprintln!("  Verifying checksum");
+    ui::working("Verifying checksum");
     verify_checksum(&binary, &expected, &asset)?;
 
-    eprintln!("  Installing");
+    ui::action("Install verified release");
     let staged = staged_path(&current)?;
     fs::write(&staged, binary)
         .with_context(|| format!("could not write downloaded binary {}", staged.display()))?;
@@ -50,14 +50,14 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     #[cfg(not(windows))]
     replace_now(&current, &staged)?;
 
-    println!("✓ Shu upgrade downloaded successfully.");
+    ui::success("Downloaded verified Shu release");
     #[cfg(windows)]
-    println!(
-        "It will replace {} after this process exits.",
-        current.display()
+    ui::detail(
+        "location",
+        format!("replaces {} after this process exits", current.display()),
     );
     #[cfg(not(windows))]
-    println!("Updated {}.", current.display());
+    ui::detail("location", current.display());
     Ok(())
 }
 
@@ -143,8 +143,6 @@ struct DownloadProgress<'a> {
     downloaded: u64,
     /// Number of bytes shown in the previous update.
     last_rendered: u64,
-    /// Whether standard error supports an in-place progress line.
-    interactive: bool,
 }
 
 impl<'a> DownloadProgress<'a> {
@@ -155,14 +153,13 @@ impl<'a> DownloadProgress<'a> {
             total,
             downloaded: 0,
             last_rendered: 0,
-            interactive: io::stderr().is_terminal(),
         }
     }
 
     /// Record downloaded bytes and refresh an interactive progress line when useful.
     fn advance(&mut self, count: u64) -> Result<()> {
         self.downloaded += count;
-        if self.interactive && self.downloaded - self.last_rendered >= PROGRESS_INTERVAL_BYTES {
+        if self.downloaded - self.last_rendered >= PROGRESS_INTERVAL_BYTES {
             self.render()?;
         }
         Ok(())
@@ -170,53 +167,20 @@ impl<'a> DownloadProgress<'a> {
 
     /// Complete the progress display with a final, stable line.
     fn finish(&mut self) -> Result<()> {
-        if self.interactive {
-            self.render()?;
-            eprintln!();
-        } else {
-            eprintln!(
-                "  Downloaded {} ({})",
-                self.asset,
-                human_size(self.downloaded)
-            );
-        }
+        self.render()?;
+        eprintln!();
         Ok(())
     }
 
     /// Rewrite one interactive line with the transferred byte count and percentage.
     fn render(&mut self) -> Result<()> {
-        let detail = match self.total {
-            Some(total) if total > 0 => format!(
-                "{} / {} ({}%)",
-                human_size(self.downloaded),
-                human_size(total),
-                self.downloaded.saturating_mul(100) / total
-            ),
-            _ => human_size(self.downloaded),
-        };
-        eprint!("\r  Downloading {}: {detail}", self.asset);
-        io::stderr().flush()?;
+        ui::render_download_progress(self.asset, self.downloaded, self.total)?;
         self.last_rendered = self.downloaded;
         Ok(())
     }
 }
 
 /// Format a byte count for a short human-facing progress message.
-fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{bytes} {}", UNITS[unit])
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
-}
-
 /// Extract one hexadecimal checksum from a standard `SHA256SUMS` manifest.
 fn checksum_for(manifest: &str, asset: &str) -> Result<String> {
     manifest
@@ -313,8 +277,8 @@ mod tests {
 
     #[test]
     fn formats_download_sizes_for_humans() {
-        assert_eq!(human_size(512), "512 B");
-        assert_eq!(human_size(1536), "1.5 KiB");
-        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MiB");
+        assert_eq!(ui::human_size(512), "512 B");
+        assert_eq!(ui::human_size(1536), "1.5 KiB");
+        assert_eq!(ui::human_size(5 * 1024 * 1024), "5.0 MiB");
     }
 }

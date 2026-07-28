@@ -15,6 +15,27 @@ and releases use [Semantic Versioning](https://semver.org/).
   coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
   assertions.
 
+## [0.1.16] - 2026-07-28
+
+### Added
+
+- A shared terminal presentation layer with cyan action cues, semantic
+  success/warning/error outcomes, aligned detail rows, and concise recovery
+  guidance.
+- A redesigned repository picker that distinguishes the preferred checkout,
+  separate checkouts, and Git worktrees without storing new catalog metadata.
+- Honest upgrade download progress based on received bytes and response size
+  when available.
+- `scripts/design-proposal.sh`, a runnable preview of Shu's terminal design
+  language and command surfaces.
+
+### Changed
+
+- Repository creation, restore, sync, upgrade, status, doctor, shell setup,
+  and selection output now share the same human-facing presentation patterns.
+- Worktree branch details are derived once while building picker candidates,
+  keeping redraws responsive.
+
 ## [0.1.15] - 2026-07-28
 
 ### Changed
@@ -270,7 +291,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.15...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/wiedymi/shu/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/wiedymi/shu/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/wiedymi/shu/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/wiedymi/shu/compare/v0.1.12...v0.1.13

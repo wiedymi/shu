@@ -27,8 +27,10 @@ pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
     if cli.json {
         return print_json(cli, &catalog, repos);
     }
-    println!("Catalog: {}", catalog_path(cli)?.display());
-    println!("Root:    {}\n", root_path(&catalog)?.display());
+    ui::heading("Library status");
+    ui::detail("catalog", catalog_path(cli)?.display());
+    ui::detail("root", root_path(&catalog)?.display());
+    println!();
     print_grouped_status(&catalog, repos)?;
     print_uncatalogued(&catalog)
 }
@@ -119,11 +121,14 @@ fn print_grouped_status(catalog: &Catalog, repos: Vec<&Repo>) -> Result<()> {
     for repo in repos {
         if current != Some(repo.state) {
             current = Some(repo.state);
-            println!("{}", repo.state.to_string().to_uppercase());
+            println!("{}", ui::accent(repo.state.to_string().to_uppercase()));
         }
         print_repository_status(catalog, repo)?;
     }
-    println!("\nEdit metadata: shu edit <repository> --state <state> --note <text>");
+    ui::detail(
+        "next",
+        "shu edit <repository> --state <state> --note <text>",
+    );
     Ok(())
 }
 

@@ -11,14 +11,14 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
-    style::{Attribute, SetAttribute},
+    style::{Color, Stylize},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
 use crate::{
     catalog,
     cli::{Cli, PickArgs},
-    locations,
+    git, locations,
     model::Repo,
 };
 
@@ -47,11 +47,8 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
         if args.path_only {
             println!("{}", selected.path.display());
         } else {
-            println!(
-                "Selected {}\n{}",
-                selected.identity,
-                selected.path.display()
-            );
+            crate::ui::success(format!("Selected {}", selected.identity));
+            crate::ui::detail("location", selected.path.display());
         }
     }
     Ok(())
@@ -61,21 +58,24 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
 struct Candidate {
     identity: String,
     location: LocationKind,
+    branch: Option<String>,
     path: PathBuf,
 }
 
-/// A location is either an independent clone or a Git-linked worktree.
+/// A picker location is derived from catalog preference and Git worktree state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LocationKind {
-    Clone,
+    Primary,
+    Checkout,
     Worktree,
 }
 
 impl LocationKind {
-    fn label(self) -> &'static str {
+    fn symbol(self) -> &'static str {
         match self {
-            Self::Clone => "clone",
-            Self::Worktree => "worktree",
+            Self::Primary => "◆",
+            Self::Checkout => "◇",
+            Self::Worktree => "⎇",
         }
     }
 }
@@ -83,17 +83,28 @@ impl LocationKind {
 /// Convert each present clone and Git worktree into a searchable picker candidate.
 fn candidates(catalog: &crate::model::Catalog, repo: &Repo) -> Result<Vec<Candidate>> {
     let clones = locations::present_paths(catalog, repo)?;
+    let primary = locations::present_path(catalog, repo)?;
     locations::pickable_paths(catalog, repo).map(|paths| {
         paths
             .into_iter()
-            .map(|path| Candidate {
-                identity: repo.source.clone(),
-                location: if clones.contains(&path) {
-                    LocationKind::Clone
+            .map(|path| {
+                let location = if primary.as_ref().is_some_and(|primary| primary == &path) {
+                    LocationKind::Primary
+                } else if clones.contains(&path) {
+                    LocationKind::Checkout
                 } else {
                     LocationKind::Worktree
-                },
-                path,
+                };
+                let branch = (location == LocationKind::Worktree)
+                    .then(|| git::output(&path, ["branch", "--show-current"]).ok())
+                    .flatten()
+                    .filter(|branch| !branch.is_empty());
+                Candidate {
+                    identity: repo.source.clone(),
+                    location,
+                    branch,
+                    path,
+                }
             })
             .collect()
     })
@@ -226,10 +237,10 @@ impl PickerTerminal {
         Ok(Self { stderr })
     }
 
-    /// Redraw the result list above a single bottom-aligned search prompt.
+    /// Redraw Shu's focused repository picker.
     fn render(&mut self, query: &str, candidates: &[Candidate], selected: usize) -> Result<()> {
         let (width, height) = terminal_size()?;
-        let visible = usize::from(height.saturating_sub(1));
+        let visible = usize::from(height.saturating_sub(6)) / 3;
         execute!(self.stderr, MoveTo(0, 0), Clear(ClearType::All))?;
         let first_visible = selected.saturating_sub(visible.saturating_sub(1));
         let visible_candidates = candidates
@@ -237,48 +248,72 @@ impl PickerTerminal {
             .skip(first_visible)
             .take(visible)
             .collect::<Vec<_>>();
-        let first_row = height
-            .saturating_sub(1)
-            .saturating_sub(visible_candidates.len() as u16);
-        for (index, candidate) in visible_candidates.into_iter().enumerate() {
-            let row = format!(
-                "[{}] {}",
-                candidate.location.label(),
-                candidate.path.display()
-            );
-            execute!(
-                self.stderr,
-                MoveTo(0, first_row + index as u16),
-                Clear(ClearType::CurrentLine)
-            )?;
-            if first_visible + index == selected {
-                execute!(self.stderr, SetAttribute(Attribute::Reverse))?;
-                write!(
-                    self.stderr,
-                    "› {}",
-                    fit_to_width(&row, width.saturating_sub(2))
-                )?;
-                execute!(self.stderr, SetAttribute(Attribute::Reset))?;
-            } else {
-                write!(
-                    self.stderr,
-                    "  {}",
-                    fit_to_width(&row, width.saturating_sub(2))
-                )?;
-            }
-        }
-        execute!(
-            self.stderr,
-            MoveTo(0, height.saturating_sub(1)),
-            Clear(ClearType::CurrentLine),
-            SetAttribute(Attribute::Reverse)
-        )?;
         write!(
             self.stderr,
-            "› {}",
-            tail_to_width(query, width.saturating_sub(2))
+            "{}\n\n",
+            "Pick a repository".with(Color::Cyan).bold()
         )?;
-        execute!(self.stderr, SetAttribute(Attribute::Reset))?;
+        write!(self.stderr, "{} ", " ".on(Color::Cyan))?;
+        if query.is_empty() {
+            write!(
+                self.stderr,
+                "{}\n\n",
+                "Search repositories".with(Color::DarkGrey)
+            )?;
+        } else {
+            write!(self.stderr, "{query}\n\n")?;
+        }
+        for (index, candidate) in visible_candidates.into_iter().enumerate() {
+            let row = &candidate.identity;
+            if first_visible + index == selected {
+                writeln!(
+                    self.stderr,
+                    "{} {}  {}",
+                    "›".with(Color::Cyan).bold(),
+                    fit_to_width(row, width.saturating_sub(8)).bold(),
+                    candidate.location.symbol().with(Color::Cyan).bold(),
+                )?;
+            } else {
+                writeln!(
+                    self.stderr,
+                    "  {}  {}",
+                    fit_to_width(row, width.saturating_sub(8)),
+                    candidate.location.symbol().with(Color::Cyan),
+                )?;
+            }
+            let branch = candidate
+                .branch
+                .as_ref()
+                .map(|branch| format!("  {branch}"))
+                .unwrap_or_default();
+            write!(
+                self.stderr,
+                "  {}{}\n\n",
+                fit_to_width(
+                    &candidate.path.display().to_string(),
+                    width.saturating_sub(4)
+                )
+                .with(Color::DarkGrey),
+                branch.with(Color::DarkGrey),
+            )?;
+        }
+        let count = candidates.len();
+        writeln!(
+            self.stderr,
+            "{} {}   {} {}   {} {}",
+            "◆".with(Color::Cyan),
+            "primary".with(Color::DarkGrey),
+            "◇".with(Color::Cyan),
+            "checkout".with(Color::DarkGrey),
+            "⎇".with(Color::Cyan),
+            "worktree".with(Color::DarkGrey),
+        )?;
+        writeln!(
+            self.stderr,
+            "{}  ·  {}",
+            format!("{count} matches").with(Color::DarkGrey),
+            "↑↓ navigate  / filter  enter open  esc cancel".with(Color::DarkGrey),
+        )?;
         self.stderr.flush()?;
         Ok(())
     }
@@ -308,25 +343,6 @@ fn fit_to_width(text: &str, width: u16) -> String {
     format!("{}…", text.chars().take(width - 1).collect::<String>())
 }
 
-/// Show the active end of a long query, where newly typed text appears.
-fn tail_to_width(text: &str, width: u16) -> String {
-    let width = usize::from(width);
-    let length = text.chars().count();
-    if length <= width {
-        return text.to_owned();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    if width == 1 {
-        return "…".to_owned();
-    }
-    format!(
-        "…{}",
-        text.chars().skip(length - width + 1).collect::<String>()
-    )
-}
-
 impl Drop for PickerTerminal {
     fn drop(&mut self) {
         let _ = execute!(self.stderr, Show, LeaveAlternateScreen);
@@ -349,14 +365,14 @@ mod tests {
     }
 
     #[test]
-    fn picker_rows_stay_on_one_line_and_keep_the_active_query_visible() {
+    fn picker_rows_stay_on_one_line() {
         assert_eq!(fit_to_width("/repositories/example", 8), "/reposi…");
-        assert_eq!(tail_to_width("repository", 5), "…tory");
     }
 
     #[test]
-    fn locations_have_clear_distinct_labels() {
-        assert_eq!(LocationKind::Clone.label(), "clone");
-        assert_eq!(LocationKind::Worktree.label(), "worktree");
+    fn locations_have_clear_distinct_symbols() {
+        assert_eq!(LocationKind::Primary.symbol(), "◆");
+        assert_eq!(LocationKind::Checkout.symbol(), "◇");
+        assert_eq!(LocationKind::Worktree.symbol(), "⎇");
     }
 }

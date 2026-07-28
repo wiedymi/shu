@@ -41,7 +41,8 @@ pub fn init(cli: &Cli) -> Result<()> {
             sync: None,
         },
     )?;
-    println!("Initialized Shu catalog at {}", path.display());
+    ui::success("Initialized Shu catalog");
+    ui::detail("location", path.display());
     Ok(())
 }
 
@@ -63,8 +64,8 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
             remember_path(&mut catalog, index, &local_path)?;
             let name = catalog::repo_name(&catalog.repos[index]).to_owned();
             catalog::save(&path, &catalog)?;
-            println!("Already catalogued {name}");
-            println!("  Local clone: {}", local_path.display());
+            ui::success(format!("Already catalogued {name}"));
+            ui::detail("Local clone:", local_path.display());
             return Ok(());
         }
         let name = catalog::repo_name(&catalog.repos[index]).to_owned();
@@ -72,8 +73,8 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         if cloned {
             catalog::save(&path, &catalog)?;
         }
-        println!("Already catalogued {name}");
-        println!("  Local clone: {}", local_path.display());
+        ui::success(format!("Already catalogued {name}"));
+        ui::detail("Local clone:", local_path.display());
         return Ok(());
     }
     add_entry(&mut catalog, args, &identity, remote);
@@ -87,8 +88,8 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         None => restore::materialize(&mut catalog, index)?.0,
     };
     catalog::save(&path, &catalog)?;
-    println!("Added {identity}");
-    println!("  Local clone: {}", local_path.display());
+    ui::success(format!("Added {identity}"));
+    ui::detail("location", local_path.display());
     Ok(())
 }
 
@@ -112,8 +113,11 @@ pub fn new(cli: &Cli, args: &NewArgs) -> Result<()> {
             target.display()
         );
     }
+    ui::heading("New repository");
+    ui::action("Create local repository");
     git::initialize(&target)?;
     if args.github {
+        ui::working("Creating GitHub repository");
         create_github_repository(&target, &identity, !args.public)?;
     }
     add_entry_with(
@@ -127,10 +131,10 @@ pub fn new(cli: &Cli, args: &NewArgs) -> Result<()> {
     let index = catalog.repos.len() - 1;
     remember_path(&mut catalog, index, &target)?;
     catalog::save(&catalog_path, &catalog)?;
-    println!("Created {identity}");
-    println!("  Local repository: {}", target.display());
+    ui::success(format!("Created {identity}"));
+    ui::detail("location", target.display());
     if args.github {
-        println!("  GitHub repository: created");
+        ui::detail("GitHub", "repository created");
     }
     Ok(())
 }
@@ -513,11 +517,11 @@ pub fn edit(cli: &Cli, args: &EditArgs) -> Result<()> {
     let note = repo.note.clone();
     catalog::save(&path, &catalog)?;
 
-    println!("Updated {name}");
-    println!("  State: {state}");
+    ui::success(format!("Updated {name}"));
+    ui::detail("state", state);
     match note {
-        Some(note) => println!("  Note:  {note}"),
-        None => println!("  Note:  none"),
+        Some(note) => ui::detail("note", note),
+        None => ui::detail("note", "none"),
     }
     Ok(())
 }
@@ -585,7 +589,7 @@ pub fn change_state(cli: &Cli, selector: &str, state: Lifecycle) -> Result<()> {
     catalog.repos[index].state = state;
     let name = catalog::repo_name(&catalog.repos[index]).to_owned();
     catalog::save(&path, &catalog)?;
-    println!("Set {name} to {state}");
+    ui::success(format!("Set {name} to {state}"));
     Ok(())
 }
 
@@ -595,10 +599,11 @@ pub fn forget(cli: &Cli, args: &SelectorArgs) -> Result<()> {
     let index = catalog::select_index(&catalog, &args.selector)?;
     let removed = catalog.repos.remove(index);
     catalog::save(&path, &catalog)?;
-    println!(
-        "Removed {} from the catalog. Local repository was not deleted.",
+    ui::success(format!(
+        "Removed {} from the catalog",
         normalize_identity(&removed.source)?
-    );
+    ));
+    ui::detail("local", "repository was not deleted");
     Ok(())
 }
 
