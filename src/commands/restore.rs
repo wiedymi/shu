@@ -12,7 +12,7 @@ use crate::{
     catalog::{self, catalog_path, repo_name},
     cli::{Cli, EnsureArgs, FilterArgs, RestoreArgs, SelectorArgs, UpdateArgs},
     git, locations,
-    model::{Catalog, Origin},
+    model::{Catalog, Sync},
     paths::{absolute, repo_path, root_path},
     sources,
 };
@@ -65,7 +65,7 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
     Ok(())
 }
 
-/// Refresh the remembered remote source, then restore the refreshed catalog.
+/// Refresh the configured Git catalog, then restore newly missing repositories.
 pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     if args.selector.is_some() || args.state.is_some() || args.note.is_some() {
         let selector = args.selector.as_deref().unwrap_or("<repository>");
@@ -73,52 +73,40 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
             "`shu update` refreshes the saved catalog source; it does not edit a repository. Use `shu edit {selector} --state <state> --note <text>` instead"
         );
     }
-    let origin: Origin = serde_json::from_slice(
-        &fs::read(catalog::origin_path(cli)?)
-            .context("no saved catalog source; run `shu restore <source>` first")?,
-    )?;
+    let (_, catalog) = catalog::load(cli)?;
+    let sync = catalog.sync.ok_or_else(|| {
+        anyhow!(
+            "no Git catalog is configured; add a [sync] table to shu.toml, then run `shu restore {remote}`",
+            remote = "<remote>"
+        )
+    })?;
     restore(
         cli,
         &RestoreArgs {
-            source: Some(origin.source),
-            file: origin.file.map(PathBuf::from),
-            git_ref: origin.git_ref,
+            source: Some(sync.remote),
+            file: Some(PathBuf::from(sync.file)),
+            git_ref: Some(sync.r#ref),
             filter: FilterArgs::default(),
         },
     )
 }
 
-/// Safely commit and push the active catalog to the Git source last restored.
+/// Safely commit and push the active catalog through its persistent Git checkout.
 pub fn sync(cli: &Cli) -> Result<()> {
-    let (catalog_file, _) = catalog::load(cli)?;
-    let origin_file = catalog::origin_path(cli)?;
-    if !origin_file.exists() {
-        bail!(
-            "no Git catalog source is configured. Create a private Git repository containing shu.toml, then run `shu restore <repository-url>` before `shu sync`"
-        );
-    }
-    let mut origin: Origin = serde_json::from_slice(&fs::read(&origin_file)?)
-        .context("could not read catalog source metadata")?;
-    let baseline = origin.revision.clone().ok_or_else(|| {
-        anyhow!(
-            "catalog source has no restore revision. Run `shu restore {}` once before syncing",
-            origin.source
-        )
+    let (catalog_file, catalog) = catalog::load(cli)?;
+    let sync = catalog.sync.clone().ok_or_else(|| {
+        anyhow!("no Git catalog is configured; add [sync] to shu.toml before running `shu sync`")
     })?;
-    let remote = sources::repository_remote(&origin.source)?.ok_or_else(|| {
-        anyhow!(
-            "catalog source is read-only. `shu sync` requires a Git repository source configured with `shu restore <repository-url>`"
-        )
-    })?;
-    let filename = sync_filename(&origin)?;
-    let workspace = tempfile::tempdir().context("could not create temporary sync workspace")?;
-    let checkout = workspace.path().join("catalog");
-    git::clone_remote(&remote, &checkout, origin.git_ref.as_deref())?;
-    let remote_revision = git::output(&checkout, ["rev-parse", "HEAD"])?;
-    if remote_revision != baseline {
+    let checkout = sync_checkout(&catalog, &sync)?;
+    verify_checkout(&checkout, &sync)?;
+    let filename = sync_filename(&sync)?;
+    git::output(&checkout, ["fetch", "origin", &sync.r#ref])?;
+    let local_revision = git::output(&checkout, ["rev-parse", "HEAD"])?;
+    let remote_revision = git::output(&checkout, ["rev-parse", "FETCH_HEAD"])?;
+    if local_revision != remote_revision {
         bail!(
-            "catalog source changed since the last restore. Run `shu restore {}` to review the remote catalog before syncing",
-            origin.source
+            "catalog source changed remotely; run `shu restore {}` before syncing",
+            sync.remote
         );
     }
     let remote_catalog = checkout.join(&filename);
@@ -141,16 +129,21 @@ pub fn sync(cli: &Cli) -> Result<()> {
     git::output(&checkout, ["commit", "-m", "Sync Shu catalog"])?;
     let branch = git::output(&checkout, ["symbolic-ref", "--short", "HEAD"])
         .context("catalog source must use a branch, not a detached ref")?;
-    git::output(&checkout, ["push", "origin", &branch])?;
-    origin.revision = Some(git::output(&checkout, ["rev-parse", "HEAD"])?);
-    fs::write(&origin_file, serde_json::to_vec_pretty(&origin)?)?;
-    println!("Synced catalog to {}.", origin.source);
+    if branch != sync.r#ref {
+        bail!(
+            "catalog checkout is on {branch}, but [sync].ref is {}; run `shu restore {}`",
+            sync.r#ref,
+            sync.remote
+        );
+    }
+    git::output(&checkout, ["push", "origin", &sync.r#ref])?;
+    println!("Synced catalog to {}.", sync.remote);
     Ok(())
 }
 
-/// Validate the catalog path stored in the source before writing inside a clone.
-fn sync_filename(origin: &Origin) -> Result<PathBuf> {
-    let file = PathBuf::from(origin.file.as_deref().unwrap_or("shu.toml"));
+/// Validate the catalog path before reading or writing inside its checkout.
+fn sync_filename(sync: &Sync) -> Result<PathBuf> {
+    let file = PathBuf::from(&sync.file);
     if file.is_absolute()
         || file
             .components()
@@ -159,6 +152,37 @@ fn sync_filename(origin: &Origin) -> Result<PathBuf> {
         bail!("catalog source contains an unsafe catalog filename");
     }
     Ok(file)
+}
+
+/// Return the persistent, inspectable checkout for a synced catalog.
+fn sync_checkout(catalog: &Catalog, sync: &Sync) -> Result<PathBuf> {
+    Ok(root_path(catalog)?.join(crate::identity::normalize_identity(&sync.remote)?))
+}
+
+/// Refuse to use a checkout that differs from the declared catalog source.
+fn verify_checkout(checkout: &std::path::Path, sync: &Sync) -> Result<()> {
+    if !git::is_repo(checkout) {
+        bail!(
+            "catalog checkout is missing at {}; run `shu restore {}`",
+            checkout.display(),
+            sync.remote
+        );
+    }
+    if !git::is_clean(checkout)? {
+        bail!(
+            "catalog checkout has local changes: {}; commit, stash, or discard them before syncing",
+            checkout.display()
+        );
+    }
+    // `git remote get-url` expands url.*.insteadOf rules. Read the stored
+    // value instead so transport rewrites do not change the source identity.
+    let configured_remote = git::output(checkout, ["config", "--get", "remote.origin.url"])?;
+    if crate::identity::normalize_identity(&configured_remote)?
+        != crate::identity::normalize_identity(&sync.remote)?
+    {
+        bail!("catalog checkout origin does not match [sync].remote");
+    }
+    Ok(())
 }
 
 /// Ensure one selected repository exists and print its absolute local path.
@@ -192,24 +216,65 @@ pub fn path_command(cli: &Cli, args: &SelectorArgs) -> Result<()> {
     Ok(())
 }
 
-/// Resolve, validate, and persist a remote catalog source before restoration.
+/// Resolve, validate, and persist a catalog source before restoration.
 fn activate_source(cli: &Cli, args: &RestoreArgs, source: &str) -> Result<()> {
+    if let Some(remote) = sources::repository_remote(source)? {
+        return activate_git_source(cli, args, &remote);
+    }
     let content = sources::resolve(source, args.file.as_deref(), args.git_ref.as_deref())?;
     let loaded: Catalog = toml::from_str(&content).context("resolved catalog is not valid TOML")?;
     if loaded.version != 1 {
         bail!("unsupported catalog version {}", loaded.version);
     }
     catalog::save(&catalog_path(cli)?, &loaded)?;
-    let origin = Origin {
-        source: source.to_owned(),
-        file: args.file.as_ref().map(|file| file.display().to_string()),
-        git_ref: args.git_ref.clone(),
-        revision: sources::repository_revision(source)?,
-    };
-    let path = catalog::origin_path(cli)?;
-    fs::create_dir_all(path.parent().expect("origin path always has a parent"))?;
-    fs::write(path, serde_json::to_vec_pretty(&origin)?)?;
     eprintln!("Using catalog from {source}");
+    Ok(())
+}
+
+/// Clone or fast-forward the normal catalog checkout, then activate its TOML file.
+fn activate_git_source(cli: &Cli, args: &RestoreArgs, remote: &str) -> Result<()> {
+    let (_, active) = catalog::load_or_initialize(cli)?;
+    let file = args
+        .file
+        .as_deref()
+        .unwrap_or_else(|| std::path::Path::new("shu.toml"));
+    let reference = args.git_ref.as_deref().unwrap_or("main");
+    let provisional = Sync {
+        remote: remote.to_owned(),
+        file: file.display().to_string(),
+        r#ref: reference.to_owned(),
+    };
+    let checkout = sync_checkout(&active, &provisional)?;
+    if checkout.exists() {
+        verify_checkout(&checkout, &provisional)?;
+        git::output(&checkout, ["pull", "--ff-only", "origin", reference])?;
+    } else {
+        git::clone_remote(remote, &checkout, Some(reference))?;
+    }
+    let catalog_file = checkout.join(sync_filename(&provisional)?);
+    let loaded: Catalog =
+        toml::from_str(&fs::read_to_string(&catalog_file).with_context(|| {
+            format!("catalog file {} was not found in {remote}", file.display())
+        })?)
+        .context("resolved catalog is not valid TOML")?;
+    if loaded.version != 1 {
+        bail!("unsupported catalog version {}", loaded.version);
+    }
+    let sync = loaded.sync.as_ref().ok_or_else(|| {
+        anyhow!(
+            "catalog file {} needs a [sync] table before it can be restored from Git",
+            file.display()
+        )
+    })?;
+    if crate::identity::normalize_identity(&sync.remote)?
+        != crate::identity::normalize_identity(remote)?
+        || sync.file != provisional.file
+        || sync.r#ref != provisional.r#ref
+    {
+        bail!("[sync] must match the repository URL, file, and ref passed to `shu restore`");
+    }
+    catalog::save(&catalog_path(cli)?, &loaded)?;
+    eprintln!("Using catalog from {remote}");
     Ok(())
 }
 

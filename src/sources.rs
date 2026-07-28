@@ -1,16 +1,15 @@
-//! Catalog-source resolution for local files, direct URLs, Gists, and Git repositories.
+//! Catalog-source resolution for local files, direct URLs, and Gists.
 
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
-use crate::{catalog::state_dir, hash::sha256_hex, http, identity::normalize_identity};
-use anyhow::{Context, Result, anyhow, bail};
+use crate::{http, identity::normalize_identity};
+use anyhow::{Context, Result, anyhow};
 
-/// Resolve a supported catalog source into its TOML text.
+/// Resolve a read-only catalog source into TOML text.
 ///
-/// A source may be a local path, direct TOML URL, Gist URL, or Git repository.
-/// Git-backed catalogs use a Shu-owned cache so user repositories are never
-/// modified while refreshing a source.
-pub fn resolve(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Result<String> {
+/// Git catalog sources are handled by `restore`, which keeps a normal Git
+/// checkout under the catalog root rather than an opaque cache.
+pub fn resolve(source: &str, file: Option<&Path>, _git_ref: Option<&str>) -> Result<String> {
     if Path::new(source).is_file() {
         return fs::read_to_string(source)
             .with_context(|| format!("could not read catalog source {source}"));
@@ -23,26 +22,7 @@ pub fn resolve(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Resu
             return http_get(source);
         }
     }
-    fetch_repository(source, file, git_ref)
-}
-
-/// Return the current Git revision for a source resolved as a repository.
-pub fn repository_revision(source: &str) -> Result<Option<String>> {
-    if !is_repository_source(source) {
-        return Ok(None);
-    }
-    let key = sha256_hex(source.as_bytes());
-    let cache = state_dir()?.join("catalogs").join(&key[..16]);
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&cache)
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .with_context(|| format!("could not read catalog revision for {source}"))?;
-    if !output.status.success() {
-        bail!("could not read catalog revision for {source}");
-    }
-    Ok(Some(String::from_utf8(output.stdout)?.trim().to_owned()))
+    anyhow::bail!("unsupported catalog source: {source}")
 }
 
 /// Return the transport URL used for a Git-backed catalog source.
@@ -64,62 +44,6 @@ fn is_repository_source(source: &str) -> bool {
     !Path::new(source).is_file()
         && (!source.starts_with("http://") && !source.starts_with("https://")
             || (!source.ends_with(".toml") && !source.contains("gist.github.com/")))
-}
-
-/// Fetch a Git-backed catalog into Shu-owned cache state and read its TOML file.
-fn fetch_repository(source: &str, file: Option<&Path>, git_ref: Option<&str>) -> Result<String> {
-    let identity = normalize_identity(source)?;
-    let key = sha256_hex(source.as_bytes());
-    let cache = state_dir()?.join("catalogs").join(&key[..16]);
-    if !cache.exists() {
-        fs::create_dir_all(cache.parent().unwrap())?;
-        let remote = if source.contains("://") || source.starts_with("git@") {
-            source.to_owned()
-        } else {
-            format!("https://{}.git", identity)
-        };
-        let mut command = Command::new("git");
-        command.args(["clone", "--depth", "1"]);
-        if let Some(reference) = git_ref {
-            command.args(["--branch", reference]);
-        }
-        if !command
-            .arg(remote)
-            .arg(&cache)
-            .status()
-            .context("could not clone catalog repository")?
-            .success()
-        {
-            bail!("could not clone catalog repository {source}");
-        }
-    } else {
-        if !Command::new("git")
-            .arg("-C")
-            .arg(&cache)
-            .args(["fetch", "--depth", "1", "origin"])
-            .status()?
-            .success()
-        {
-            bail!("could not refresh catalog repository {source}");
-        }
-        // This is Shu-owned cache state, never a user repository.
-        if !Command::new("git")
-            .arg("-C")
-            .arg(&cache)
-            .args(["reset", "--hard", "FETCH_HEAD"])
-            .status()?
-            .success()
-        {
-            bail!("could not update cached catalog repository {source}");
-        }
-    }
-    let filename = file.unwrap_or_else(|| Path::new("shu.toml"));
-    fs::read_to_string(cache.join(filename)).with_context(|| {
-        format!(
-            "catalog file {} was not found in {source}",
-            filename.display()
-        )
-    })
 }
 
 /// Download a direct TOML URL with an explicit Shu user agent.

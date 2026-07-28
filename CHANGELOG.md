@@ -7,6 +7,23 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-28
+
+### Changed
+
+- Catalog sync is now configured entirely in `shu.toml` with `[sync]`.
+  Shu keeps the catalog as a normal, persistent checkout beneath the configured
+  repository root instead of storing sidecar metadata or using a temporary
+  clone.
+- `shu update` reads the same `[sync]` configuration, and `shu doctor` checks
+  the persistent checkout without hidden source state.
+
+### Security
+
+- Sync requires a clean, matching checkout and refuses remote changes until
+  they are explicitly restored. It still never merges, resets, force-pushes,
+  or stores credentials.
+
 ## [0.1.11] - 2026-07-28
 
 ### Added

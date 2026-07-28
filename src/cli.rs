@@ -64,9 +64,9 @@ pub enum Commands {
     Status(FilterArgs),
     /// Load a catalog source if provided, then clone missing repositories.
     Restore(RestoreArgs),
-    /// Push catalog changes back to the Git source configured by `shu restore`.
+    /// Push catalog changes through the Git checkout configured in shu.toml.
     Sync,
-    /// Refresh the configured catalog source and restore any newly missing repositories.
+    /// Refresh the configured Git catalog and restore any newly missing repositories.
     #[command(
         after_help = "To edit a repository's metadata, use `shu edit <repository> --state <state>` or `shu edit <repository> --note <text>`."
     )]

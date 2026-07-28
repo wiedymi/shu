@@ -42,6 +42,8 @@ pub struct Catalog {
     /// Repositories preserved by this catalog.
     #[serde(default)]
     pub repos: Vec<Repo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<Sync>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -97,18 +99,23 @@ impl Repo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-/// The saved origin used by `shu update`.
-pub struct Origin {
-    /// Original source string passed to `shu restore`.
-    pub source: String,
-    /// Optional file path within the source.
-    pub file: Option<String>,
-    /// Optional Git ref used to resolve the source.
-    pub git_ref: Option<String>,
-    /// Git commit observed by the most recent restore, used to prevent sync overwrite.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision: Option<String>,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Git transport settings stored with the portable catalog.
+pub struct Sync {
+    /// The Git repository that owns this catalog.
+    pub remote: String,
+    #[serde(default = "default_sync_file")]
+    pub file: String,
+    #[serde(default = "default_sync_ref")]
+    pub r#ref: String,
+}
+
+fn default_sync_file() -> String {
+    "shu.toml".into()
+}
+
+fn default_sync_ref() -> String {
+    "main".into()
 }
 
 #[derive(Debug, Serialize)]

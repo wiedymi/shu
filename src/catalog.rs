@@ -23,23 +23,6 @@ pub fn catalog_path(cli: &Cli) -> Result<PathBuf> {
         .unwrap_or_else(|| dirs().unwrap().config_dir().join("shu.toml")))
 }
 
-/// Return the sidecar file that records the source used by `shu update`.
-pub fn origin_path(cli: &Cli) -> Result<PathBuf> {
-    if let Some(catalog) = &cli.catalog {
-        return Ok(catalog.with_extension("origin.json"));
-    }
-    Ok(dirs()?.config_dir().join("origin.json"))
-}
-
-/// Return Shu's disposable, machine-local state directory.
-pub fn state_dir() -> Result<PathBuf> {
-    let project = dirs()?;
-    Ok(project
-        .state_dir()
-        .unwrap_or_else(|| project.data_local_dir())
-        .to_path_buf())
-}
-
 /// Load and validate the selected catalog, returning its path and parsed data.
 pub fn load(cli: &Cli) -> Result<(PathBuf, Catalog)> {
     let path = catalog_path(cli)?;
@@ -71,6 +54,7 @@ pub fn load_or_initialize(cli: &Cli) -> Result<(PathBuf, Catalog)> {
                 version: 1,
                 root: crate::model::default_root(),
                 repos: vec![],
+                sync: None,
             },
         )?;
     }
@@ -201,6 +185,7 @@ mod tests {
                     primary: None,
                 },
             ],
+            sync: None,
         }
     }
 

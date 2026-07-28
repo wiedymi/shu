@@ -207,15 +207,24 @@ then deletes a repository as a fallback.
 ## Updating
 
 ```sh
-shu update              # Refresh the saved catalog source and restore missing repositories
+shu update              # Refresh the configured Git catalog and restore missing repositories
 shu upgrade             # Install the latest verified Shu release
 ```
 
 ## Syncing a private catalog
 
 Shu does not create repositories or manage credentials. Create a private Git
-repository with your preferred provider, commit a `shu.toml` to it, then make
-it the active source once:
+repository with your preferred provider and commit a `shu.toml` that names the
+same repository:
+
+```toml
+[sync]
+remote = "git@github.com:you/shu-catalog.git"
+file = "shu.toml"
+ref = "main"
+```
+
+Then make it active once:
 
 ```sh
 shu restore git@github.com:you/shu-catalog.git
@@ -227,9 +236,14 @@ After changing the local catalog, publish it with:
 shu sync
 ```
 
-`sync` uses your existing Git credentials. It refuses to push if the remote
-catalog changed since the last `restore`; run `shu restore` again to review the
-remote version. It never stores credentials, force-pushes, or merges changes.
+Shu keeps that catalog as a normal checkout at the canonical path below your
+configured repository root (for example `~/shu/github.com/you/shu-catalog`).
+It is not added to `[[repos]]`, so it never appears in your repository picker.
+
+`sync` uses your existing Git credentials. It refuses a dirty checkout or a
+remote change that has not been restored first; run `shu restore` again to
+review the remote version. It never stores credentials, force-pushes, resets,
+or merges changes.
 
 If a clone or release download is unavailable, Shu reports what failed and
 suggests checking the path, network connection, or Git access. It does not try

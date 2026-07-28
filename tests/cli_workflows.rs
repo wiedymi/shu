@@ -84,7 +84,7 @@ fn restore_continues_after_an_inaccessible_repository_and_explains_the_failure()
 }
 
 #[test]
-fn activates_a_local_catalog_source_and_refreshes_it_with_update() {
+fn activates_a_local_catalog_source_without_creating_sidecar_state() {
     let fixture = Fixture::new();
     let source = fixture.write_catalog("portable-library.toml");
     let active = fixture.temp.path().join("active.toml");
@@ -103,13 +103,9 @@ fn activates_a_local_catalog_source_and_refreshes_it_with_update() {
         "restore should save the selected catalog as active"
     );
     assert!(
-        active.with_extension("origin.json").exists(),
-        "restore should remember its source for update"
+        !active.with_extension("origin.json").exists(),
+        "local sources must not create separate source metadata"
     );
-
-    fixture
-        .shu(["--catalog", active.to_str().unwrap(), "--yes", "update"])
-        .assert_success();
     fixture
         .shu([
             "--catalog",
@@ -140,13 +136,13 @@ fn activates_a_catalog_from_a_direct_http_url() {
 
     assert!(active.exists(), "direct catalog URLs should become active");
     assert!(
-        active.with_extension("origin.json").exists(),
-        "direct catalog URLs should retain their source"
+        !active.with_extension("origin.json").exists(),
+        "direct catalog URLs must not create separate source metadata"
     );
 }
 
 #[test]
-fn doctor_validates_a_restored_local_setup_and_its_source() {
+fn doctor_skips_source_checks_for_a_local_catalog() {
     let fixture = Fixture::new();
     let source = fixture.write_catalog("portable-library.toml");
     let active = fixture.temp.path().join("active.toml");
@@ -171,13 +167,58 @@ fn doctor_validates_a_restored_local_setup_and_its_source() {
     let report = String::from_utf8(doctor.stdout).unwrap();
     assert!(report.contains("✓ git:"));
     assert!(report.contains("✓ catalog:"));
-    assert!(report.contains("✓ catalog source: reachable:"));
+    assert!(report.contains("- catalog source: no [sync] configuration in shu.toml"));
 
     let json = fixture.shu(["--catalog", active.to_str().unwrap(), "--json", "doctor"]);
     json.assert_success();
     let report: Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(report["schema_version"], 1);
     assert_eq!(report["checks"][0]["name"], "git");
+}
+
+#[test]
+fn restores_and_syncs_a_catalog_through_a_persistent_checkout() {
+    let fixture = Fixture::new();
+    let active = fixture.write_empty_catalog("active.toml");
+    fixture.write_sync_catalog_to_seed();
+    let remote = "https://github.com/example-org/api.git";
+
+    fixture
+        .shu([
+            "--catalog",
+            active.to_str().unwrap(),
+            "--yes",
+            "restore",
+            remote,
+        ])
+        .assert_success();
+
+    let checkout = fixture.root.join("github.com/example-org/api");
+    assert!(checkout.join(".git").exists());
+    assert!(!active.with_extension("origin.json").exists());
+    run_git(
+        &checkout,
+        [
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/example-org/api.git",
+        ],
+        None,
+    );
+
+    let mut catalog = fs::read_to_string(&active).unwrap();
+    catalog = catalog.replace(
+        "tags = [\"integration\"]",
+        "tags = [\"integration\", \"synced\"]",
+    );
+    fs::write(&active, catalog).unwrap();
+    fixture
+        .shu(["--catalog", active.to_str().unwrap(), "sync"])
+        .assert_success();
+
+    let synced = run_git_output(&fixture.remote, ["show", "main:shu.toml"]);
+    assert!(synced.contains("synced"));
 }
 
 #[test]
@@ -728,6 +769,7 @@ struct Fixture {
     temp: TempDir,
     root: PathBuf,
     seed: PathBuf,
+    remote: PathBuf,
     rewrite_prefix: String,
 }
 
@@ -775,6 +817,7 @@ impl Fixture {
             root: temp.path().join("library"),
             temp,
             seed,
+            remote,
             rewrite_prefix,
         }
     }
@@ -791,6 +834,47 @@ impl Fixture {
         let root = self.root.to_string_lossy().replace('\\', "/");
         fs::write(&path, format!("version = 1\nroot = \"{root}\"\n")).unwrap();
         path
+    }
+
+    fn write_sync_catalog_to_seed(&self) {
+        let root = self.root.to_string_lossy().replace('\\', "/");
+        fs::write(
+            self.seed.join("shu.toml"),
+            format!(
+                "version = 1\nroot = \"{root}\"\n\n[sync]\nremote = \"https://github.com/example-org/api.git\"\nfile = \"shu.toml\"\nref = \"main\"\n\n[[repos]]\nsource = \"github.com/example-org/api\"\nstate = \"active\"\ntags = [\"integration\"]\n"
+            ),
+        )
+        .unwrap();
+        run_git(&self.seed, ["add", "shu.toml"], None);
+        run_git(
+            &self.seed,
+            [
+                "-c",
+                "user.name=Shu Test",
+                "-c",
+                "user.email=shu@example.invalid",
+                "commit",
+                "-m",
+                "catalog",
+            ],
+            None,
+        );
+        run_git(
+            &self.seed,
+            ["remote", "set-url", "origin"],
+            Some(&self.remote),
+        );
+        run_git(&self.seed, ["push", "origin", "main"], None);
+        run_git(
+            &self.seed,
+            [
+                "remote",
+                "set-url",
+                "origin",
+                "git@github.com:example-org/api.git",
+            ],
+            None,
+        );
     }
 
     fn write_catalog_with_inaccessible_repository(&self, name: &str) -> PathBuf {
@@ -843,6 +927,16 @@ fn run_git<const N: usize>(working_dir: &Path, args: [&str; N], path_argument: O
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn run_git_output<const N: usize>(working_dir: &Path, args: [&str; N]) -> String {
+    let output = Command::new("git")
+        .current_dir(working_dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
 }
 
 /// Serve one catalog response so direct-URL resolution is tested without internet access.

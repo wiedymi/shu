@@ -8,9 +8,9 @@ use serde::Serialize;
 use crate::{
     catalog,
     cli::{Cli, DoctorArgs},
-    model::{Catalog, Origin},
+    git,
+    model::{Catalog, Sync},
     paths::root_path,
-    sources,
 };
 
 /// Check the local Shu setup and report actionable failures.
@@ -41,7 +41,7 @@ pub fn doctor(cli: &Cli, args: &DoctorArgs) -> Result<()> {
         checks.push(Check::skip("repository root", "catalog is unavailable"));
     }
 
-    checks.push(check_origin(cli, args.check_source)?);
+    checks.push(check_sync(catalog.as_ref(), args.check_source)?);
     render(cli, &checks)?;
     if checks.iter().any(|check| check.status == CheckStatus::Fail) {
         bail!("Shu setup has failing checks")
@@ -148,48 +148,49 @@ fn existing_ancestor(path: &Path) -> Option<&Path> {
     path.ancestors().find(|ancestor| ancestor.exists())
 }
 
-/// Inspect the optional remembered source and resolve it on explicit request.
-fn check_origin(cli: &Cli, check_source: bool) -> Result<Check> {
-    let path = catalog::origin_path(cli)?;
-    if !path.exists() {
+/// Inspect the optional in-catalog Git sync configuration.
+fn check_sync(catalog: Option<&Catalog>, check_source: bool) -> Result<Check> {
+    let Some(sync) = catalog.and_then(|catalog| catalog.sync.as_ref()) else {
         return Ok(Check::skip(
             "catalog source",
-            "no remembered source; use `shu restore <source>` to configure one",
+            "no [sync] configuration in shu.toml",
         ));
-    }
-    let origin: Origin = serde_json::from_slice(
-        &fs::read(&path).with_context(|| format!("could not read {}", path.display()))?,
-    )
-    .with_context(|| format!("invalid source metadata {}", path.display()))?;
+    };
     if !check_source {
         return Ok(Check::pass(
             "catalog source",
             format!(
                 "configured: {} (run `shu doctor --check-source` to verify)",
-                origin.source
+                sync.remote
             ),
         ));
     }
-    match sources::resolve(
-        &origin.source,
-        origin.file.as_deref().map(Path::new),
-        origin.git_ref.as_deref(),
-    ) {
-        Ok(content) => match toml::from_str::<Catalog>(&content) {
-            Ok(_) => Ok(Check::pass(
-                "catalog source",
-                format!("reachable: {}", origin.source),
-            )),
-            Err(error) => Ok(Check::fail(
-                "catalog source",
-                format!("invalid TOML: {error}"),
-            )),
-        },
-        Err(error) => Ok(Check::fail(
+    check_sync_checkout(catalog.expect("sync has a catalog"), sync)
+}
+
+/// Confirm that the configured persistent checkout is ready without fetching.
+fn check_sync_checkout(catalog: &Catalog, sync: &Sync) -> Result<Check> {
+    let checkout = root_path(catalog)?.join(crate::identity::normalize_identity(&sync.remote)?);
+    if !git::is_repo(&checkout) {
+        return Ok(Check::fail(
             "catalog source",
-            format!("unreachable: {error:#}"),
-        )),
+            format!(
+                "checkout missing: {}; run `shu restore {}`",
+                checkout.display(),
+                sync.remote
+            ),
+        ));
     }
+    if !git::is_clean(&checkout)? {
+        return Ok(Check::fail(
+            "catalog source",
+            format!("checkout has local changes: {}", checkout.display()),
+        ));
+    }
+    Ok(Check::pass(
+        "catalog source",
+        format!("ready: {}", checkout.display()),
+    ))
 }
 
 /// Render diagnostics in either human-readable or machine-readable form.

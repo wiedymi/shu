@@ -37,6 +37,7 @@ pub fn init(cli: &Cli) -> Result<()> {
             version: 1,
             root: crate::model::default_root(),
             repos: vec![],
+            sync: None,
         },
     )?;
     println!("Initialized Shu catalog at {}", path.display());
