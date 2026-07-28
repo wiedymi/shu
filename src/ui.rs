@@ -120,7 +120,10 @@ pub fn render_download_progress(downloaded: u64, total: Option<u64>) -> std::io:
         ),
         None => human_size(downloaded),
     };
-    eprint!("\r  {detail}");
+    // A carriage return alone leaves trailing cells from an earlier frame in
+    // place on some terminals. Erase the entire line before drawing the next
+    // byte-accurate frame.
+    eprint!("\r\x1b[2K  {detail}");
     stderr().flush()
 }
 
