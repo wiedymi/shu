@@ -1,5 +1,7 @@
 //! `shu.toml` types and machine-readable output structures.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use clap::ValueEnum;
@@ -40,8 +42,19 @@ pub struct Catalog {
     /// Repositories preserved by this catalog.
     #[serde(default)]
     pub repos: Vec<Repo>,
+    /// Named, portable repository queries derived from repository tags.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub collections: BTreeMap<String, Collection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<Sync>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+/// A named repository group derived from tags instead of stored membership.
+pub struct Collection {
+    /// Tags every repository in this collection must have.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

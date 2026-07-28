@@ -70,6 +70,7 @@ picker and returns the selected path. The shell integration below makes plain
 | See clones and Git worktrees | `shu locations project` |
 | See what is missing locally | `shu status` |
 | Clone every missing catalogued project | `shu restore` |
+| Restore one named group | `shu restore --collection work` |
 | Discover projects in a directory | `shu scan ~/Development --add` |
 | Check your setup | `shu doctor` |
 
@@ -112,6 +113,37 @@ shu archive project
 
 The available states are `active`, `parked`, `reference`, and `archived`.
 Shu never deletes repositories or resets working trees.
+
+### Organize and restore collections
+
+Tags describe repositories; collections are portable named queries over those
+tags. They do not duplicate membership or change clone paths. A collection with
+multiple tags requires every tag.
+
+```toml
+[collections]
+work = { tags = ["work"] }
+platform = { tags = ["platform", "rust"] }
+```
+
+Use a collection anywhere Shu accepts repository filters:
+
+```sh
+shu list --collection work
+shu pick --collection platform
+shu restore --collection work
+```
+
+Repeat `--tag` for the same one-off all-tags match:
+
+```sh
+shu restore --tag work --tag rust
+```
+
+When restoring a newly supplied catalog source, Shu first asks whether to
+select named collections or individual repositories. Entering a selection only
+previews it; type `yes` to start cloning. Use `--yes` for an unattended restore
+of every matching repository.
 
 If you want to bring a clean existing checkout into Shu's managed layout,
 preview the move first:

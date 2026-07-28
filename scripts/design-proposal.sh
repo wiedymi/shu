@@ -95,8 +95,8 @@ printf '  '; accent; printf '…'; reset; printf '  work in progress when total 
 printf '  '; warn; printf '!'; reset; printf '  attention needed; the operation can continue or explains the choice\n'
 printf '  '; bad; printf '×'; reset; printf '  operation failed; show cause and the immediate recovery command\n'
 printf '\n'
-printf '  '; label 'result'; printf 'github.com/wiedymi/shu\n'
-printf '  '; label 'location'; printf '/Users/wiedy/Code/github.com/wiedymi/shu\n'
+printf '  '; label 'result'; printf 'github.com/example-org/tooling\n'
+printf '  '; label 'location'; printf '~/Code/github.com/example-org/tooling\n'
 printf '  '; label 'next'; printf 'shu status\n'
 
 heading '3. Operations: truthful work feedback'
@@ -131,12 +131,12 @@ accent; printf 'Pick a repository\n'; reset
 printf '\n'
 input_cell; printf ' '; muted; printf 'Search repositories\n'; reset
 printf '\n'
-accent; printf '› '; reset; title; printf 'wiedymi/shu'; reset
+accent; printf '› '; reset; title; printf 'example-org/tooling'; reset
 printf '  '; accent; printf '◆'; reset
-printf '\n  '; muted; printf '~/Code/github.com/wiedymi/shu\n'; reset
-printf '\n  '; title; printf 'wiedymi/api'; reset
+printf '\n  '; muted; printf '~/Code/github.com/example-org/tooling\n'; reset
+printf '\n  '; title; printf 'example-org/api'; reset
 printf '  '; accent; printf '⎇ '; reset; muted; printf 'feature/auth'; reset
-printf '\n  '; muted; printf '~/Code/github.com/wiedymi/api\n'; reset
+printf '\n  '; muted; printf '~/Code/github.com/example-org/api\n'; reset
 printf '\n  '; title; printf 'acme/api-docs'; reset
 printf '  '; accent; printf '◇'; reset
 printf '\n  '; muted; printf '~/Code/github.com/acme/api-docs\n'; reset
@@ -150,15 +150,15 @@ printf '\n'
 accent; printf 'Find a repository\n'; reset
 printf '\n'
 input_cell; printf ' api\n\n'
-accent; printf '› '; reset; title; printf 'wiedymi/api'; reset
+accent; printf '› '; reset; title; printf 'example-org/api'; reset
 printf '  '; accent; printf '⎇ '; reset; muted; printf 'feature/auth'; reset
-printf '\n  '; muted; printf '~/Code/github.com/wiedymi/api\n'; reset
-printf '\n  '; title; printf 'acme/api'; reset
+printf '\n  '; muted; printf '~/Code/github.com/example-org/api\n'; reset
+printf '\n  '; title; printf 'sample-org/api'; reset
 printf '  '; accent; printf '◇'; reset
-printf '\n  '; muted; printf '~/Code/github.com/acme/api\n'; reset
-printf '\n  '; title; printf 'acme/api-docs'; reset
+printf '\n  '; muted; printf '~/Code/github.com/sample-org/api\n'; reset
+printf '\n  '; title; printf 'sample-org/api-docs'; reset
 printf '  '; accent; printf '◆'; reset
-printf '\n  '; muted; printf '~/Code/github.com/acme/api-docs\n'; reset
+printf '\n  '; muted; printf '~/Code/github.com/sample-org/api-docs\n'; reset
 printf '\n'; muted; printf '3 matches  ·  esc cancel\n'; reset
 
 heading '5. Status, confirmations, and errors'
@@ -167,46 +167,46 @@ printf '\n'
 accent; printf 'shu'; reset; printf '  Library status'; muted; printf '                                      12 repositories'; reset
 printf '\n\n'
 good; printf '✓ '; reset; printf 'Ready'; muted; printf '  10'; reset
-printf '\n  github.com/wiedymi/shu'; muted; printf '                    /Users/wiedy/Code/github.com/wiedymi/shu'; reset
+printf '\n  github.com/example-org/tooling'; muted; printf '                    ~/Code/github.com/example-org/tooling'; reset
 printf '\n\n'
 warn; printf '! '; reset; printf 'Needs restore'; muted; printf '  2'; reset
-printf '\n  github.com/wiedymi/archive'; muted; printf '                expected at ~/Code/github.com/wiedymi/archive'; reset
-printf '\n  '; label 'next'; printf 'shu ensure github.com/wiedymi/archive\n'
+printf '\n  github.com/example-org/archive'; muted; printf '            expected at ~/Code/github.com/example-org/archive'; reset
+printf '\n  '; label 'next'; printf 'shu ensure github.com/example-org/archive\n'
 printf '\n'
 warn; printf '! '; reset; printf 'Move repository into Shu library?\n'
 printf '  '; label 'from'; printf '/tmp/shu\n'
-printf '  '; label 'to'; printf '~/Code/github.com/wiedymi/shu\n'
+printf '  '; label 'to'; printf '~/Code/github.com/example-org/tooling\n'
 printf '  '; label 'effect'; printf 'moves the clean clone; Git history and files are unchanged\n'
 printf '  Continue? [y/N] '
 printf '\n\n'
-bad; printf '× '; reset; printf 'Could not clone github.com/wiedymi/shu\n'
+bad; printf '× '; reset; printf 'Could not clone github.com/example-org/tooling\n'
 printf '  '; label 'cause'; printf 'authentication to github.com was rejected\n'
-printf '  '; label 'next'; printf 'gh auth login, then rerun shu ensure github.com/wiedymi/shu\n'
+printf '  '; label 'next'; printf 'gh auth login, then rerun shu ensure github.com/example-org/tooling\n'
 
 heading '6. Everyday command surfaces'
 printf '%s\n' 'Commands that create, publish, update, or explain themselves use the same compact action → result grammar.'
 printf '\n'
 accent; printf 'New repository\n'; reset
-muted; printf '  shu new github.com/wiedymi/notes --github --private\n'; reset
+muted; printf '  shu new github.com/example-org/notes --github --private\n'; reset
 printf '  '; accent; printf '→ '; reset; printf 'Create local repository\n'
 printf '  '; accent; printf '→ '; reset; printf 'Create private GitHub repository\n'
-printf '  '; good; printf '✓ '; reset; printf 'Created wiedymi/notes\n'
-printf '  '; label 'location'; printf '~/Code/github.com/wiedymi/notes\n'
-printf '  '; label 'next'; printf 'cd ~/Code/github.com/wiedymi/notes\n'
+printf '  '; good; printf '✓ '; reset; printf 'Created example-org/notes\n'
+printf '  '; label 'location'; printf '~/Code/github.com/example-org/notes\n'
+printf '  '; label 'next'; printf 'cd ~/Code/github.com/example-org/notes\n'
 printf '\n'
 accent; printf 'Set up catalog sync\n'; reset
-muted; printf '  shu sync init github.com/wiedymi/repository-library --github --private\n'; reset
+muted; printf '  shu sync init github.com/example-org/repository-library --github --private\n'; reset
 printf '  '; accent; printf '→ '; reset; printf 'Create catalog checkout\n'
-printf '  '; accent; printf '→ '; reset; printf 'Publish shu.toml to github.com/wiedymi/repository-library\n'
+printf '  '; accent; printf '→ '; reset; printf 'Publish shu.toml to github.com/example-org/repository-library\n'
 printf '  '; good; printf '✓ '; reset; printf 'Catalog sync is ready\n'
-printf '  '; label 'checkout'; printf '~/Code/github.com/wiedymi/repository-library\n'
+printf '  '; label 'checkout'; printf '~/Code/github.com/example-org/repository-library\n'
 printf '  '; label 'next'; printf 'shu sync\n'
 printf '\n'
 accent; printf 'Sync catalog\n'; reset
 muted; printf '  shu sync\n'; reset
-printf '  '; accent; printf '… '; reset; printf 'Checking github.com/wiedymi/repository-library\n'
+printf '  '; accent; printf '… '; reset; printf 'Checking github.com/example-org/repository-library\n'
 printf '  '; good; printf '✓ '; reset; printf 'Published shu.toml\n'
-printf '  '; label 'remote'; printf 'github.com/wiedymi/repository-library\n'
+printf '  '; label 'remote'; printf 'github.com/example-org/repository-library\n'
 printf '\n'
 accent; printf 'Upgrade\n'; reset
 muted; printf '  shu upgrade\n'; reset
@@ -248,5 +248,37 @@ printf '%s\n' '  1. Establish output modes and shared renderer with snapshot tes
 printf '%s\n' '  2. Adopt it for restore, ensure, add, upgrade, sync, and scan—the operations that can take noticeable time.'
 printf '%s\n' '  3. Replace the picker with a bounded, fzf-like renderer after terminal-size, resize, Unicode-width, and stdout-capture behavior are covered.'
 printf '%s\n' '  4. Bring catalog, status, doctor, and errors onto the same result grammar; preserve --json exactly.'
+printf '\n'
+
+heading '9. Collections and source restore'
+printf '%s\n' 'Collections are portable named queries over existing tags. They never change repository paths or duplicate membership state.'
+printf '\n'
+muted; printf '  [collections]\n'; reset
+printf '  work = { tags = ["work"] }\n'
+printf '  platform = { tags = ["platform", "rust"] }\n'
+printf '\n'
+muted; printf '  shu restore git@github.com:example-org/catalog.git\n\n'; reset
+accent; printf 'Restore mode\n'; reset
+printf '\n'
+accent; printf '› '; reset; title; printf 'Collections\n'; reset
+printf '  Repositories\n'
+printf '\n'; muted; printf '↑↓ navigate  ·  enter continue  ·  esc cancel\n'; reset
+printf '\n'
+accent; printf 'Select collections\n'; reset
+printf '\n'
+accent; printf '› [x] '; reset; title; printf 'work'; reset; muted; printf '        2 missing repositories\n'; reset
+printf '  [ ] '; title; printf 'platform'; reset; muted; printf '    1 missing repository\n'; reset
+printf '\n'; muted; printf '1 selected  ·  ↑↓ navigate  ·  space toggle  ·  enter continue  ·  esc back\n'; reset
+printf '\n'
+accent; printf 'Restore 2 repositories?\n'; reset
+printf '\n'
+printf '  github.com/example-org/service-a\n'
+printf '  github.com/example-org/service-b\n'
+printf '\n'; warn; printf 'Type yes to clone these repositories: '; reset; printf 'yes\n'
+printf '\n  '; good; printf '✓ '; reset; printf 'Restored service-a\n'
+printf '  '; good; printf '✓ '; reset; printf 'Restored service-b\n'
+printf '\n'
+muted; printf 'Repository mode uses the same selector with individual rows.\n'; reset
+muted; printf 'Collection matches are deduplicated before confirmation.\n'; reset
 printf '\n'
 good; printf '✓ '; reset; printf 'End of proposal. Run with --static for deterministic review output.\n'

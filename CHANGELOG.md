@@ -7,6 +7,21 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-07-28
+
+### Added
+
+- Portable named collections derived from repository tags, available to
+  `list`, `status`, `pick`, and `restore`; repeat `--tag` to require multiple
+  tags without defining a collection.
+- An interactive source-restore flow that selects collections or individual
+  repositories before requiring an explicit `yes` confirmation to clone.
+
+### Fixed
+
+- Ignore Windows key-release events in the terminal picker so the Enter used
+  to start it cannot immediately select its first repository.
+
 ### Changed
 
 - Rewrite the README around the everyday flow: add or clone a repository, find
@@ -337,7 +352,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.21...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.22...HEAD
+[0.1.22]: https://github.com/wiedymi/shu/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/wiedymi/shu/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/wiedymi/shu/compare/v0.1.19...v0.1.20
 [0.1.19]: https://github.com/wiedymi/shu/compare/v0.1.18...v0.1.19
