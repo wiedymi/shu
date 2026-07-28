@@ -248,35 +248,38 @@ impl PickerTerminal {
             .skip(first_visible)
             .take(visible)
             .collect::<Vec<_>>();
+        // Raw mode disables the terminal's normal NL-to-CRLF conversion. Use
+        // CRLF explicitly so every logical row starts in column zero instead
+        // of continuing from the end of the preceding row.
         write!(
             self.stderr,
-            "{}\n\n",
+            "{}\r\n\r\n",
             "Pick a repository".with(Color::Cyan).bold()
         )?;
         write!(self.stderr, "{} ", " ".on(Color::Cyan))?;
         if query.is_empty() {
             write!(
                 self.stderr,
-                "{}\n\n",
+                "{}\r\n\r\n",
                 "Search repositories".with(Color::DarkGrey)
             )?;
         } else {
-            write!(self.stderr, "{query}\n\n")?;
+            write!(self.stderr, "{query}\r\n\r\n")?;
         }
         for (index, candidate) in visible_candidates.into_iter().enumerate() {
             let row = &candidate.identity;
             if first_visible + index == selected {
-                writeln!(
+                write!(
                     self.stderr,
-                    "{} {}  {}",
+                    "{} {}  {}\r\n",
                     "›".with(Color::Cyan).bold(),
                     fit_to_width(row, width.saturating_sub(8)).bold(),
                     candidate.location.symbol().with(Color::Cyan).bold(),
                 )?;
             } else {
-                writeln!(
+                write!(
                     self.stderr,
-                    "  {}  {}",
+                    "  {}  {}\r\n",
                     fit_to_width(row, width.saturating_sub(8)),
                     candidate.location.symbol().with(Color::Cyan),
                 )?;
@@ -288,7 +291,7 @@ impl PickerTerminal {
                 .unwrap_or_default();
             write!(
                 self.stderr,
-                "  {}{}\n\n",
+                "  {}{}\r\n\r\n",
                 fit_to_width(
                     &candidate.path.display().to_string(),
                     width.saturating_sub(4)
@@ -298,9 +301,9 @@ impl PickerTerminal {
             )?;
         }
         let count = candidates.len();
-        writeln!(
+        write!(
             self.stderr,
-            "{} {}   {} {}   {} {}",
+            "{} {}   {} {}   {} {}\r\n",
             "◆".with(Color::Cyan),
             "primary".with(Color::DarkGrey),
             "◇".with(Color::Cyan),
@@ -308,9 +311,9 @@ impl PickerTerminal {
             "⎇".with(Color::Cyan),
             "worktree".with(Color::DarkGrey),
         )?;
-        writeln!(
+        write!(
             self.stderr,
-            "{}  ·  {}",
+            "{}  ·  {}\r\n",
             format!("{count} matches").with(Color::DarkGrey),
             "↑↓ navigate  / filter  enter open  esc cancel".with(Color::DarkGrey),
         )?;
