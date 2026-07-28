@@ -1,6 +1,6 @@
 [package]
 name = "shu"
-version = "0.1.18"
+version = "0.1.19"
 edition = "2024"
 rust-version = "1.88"
 description = "A tiny, declarative, agent-friendly repository library"
@@ -20,9 +20,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
 toml = "1.1"
-ureq = { version = "3.3", default-features = false, features = ["platform-verifier", "rustls"] }
-url = "2.5"
 walkdir = "2.5"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+ureq = { version = "3.3", default-features = false, features = ["native-tls"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ureq = { version = "3.3", default-features = false, features = ["platform-verifier", "rustls"] }
 
 [dev-dependencies]
 tempfile = "3.15"
@@ -32,7 +36,7 @@ tempfile = "3.15"
 # normal development builds.
 [profile.release]
 opt-level = "z"
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"

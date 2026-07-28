@@ -15,6 +15,16 @@ and releases use [Semantic Versioning](https://semver.org/).
   coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
   assertions.
 
+## [0.1.19] - 2026-07-28
+
+### Changed
+
+- Reduced macOS and Windows release-binary size by using their operating
+  system TLS implementations while preserving platform trust-store verification.
+- Replaced the general-purpose URL dependency with focused Git remote parsing,
+  including SSH ports and HTTPS URL query and fragment handling.
+- Use full link-time optimization for smaller standalone release binaries.
+
 ## [0.1.18] - 2026-07-28
 
 ### Fixed
@@ -312,7 +322,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/wiedymi/shu/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/wiedymi/shu/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/wiedymi/shu/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/wiedymi/shu/compare/v0.1.15...v0.1.16

@@ -1,6 +1,6 @@
 //! Normalization for the Git remote formats Shu accepts.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 
 /// Normalize a Git remote or shorthand into `host/namespace/repository`.
 ///
@@ -57,14 +57,25 @@ fn parse_scp_remote(remote: &str, original: &str) -> Result<ParsedIdentity> {
 
 /// Parse a standard URL such as `https://github.com/owner/project`.
 fn parse_url_remote(raw: &str, original: &str) -> Result<ParsedIdentity> {
-    let url = url::Url::parse(raw).with_context(|| format!("invalid URL: {original}"))?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| anyhow!("Git URL has no host: {original}"))?;
+    let (_, remainder) = raw
+        .split_once("://")
+        .ok_or_else(|| anyhow!("invalid URL: {original}"))?;
+    let (authority, path) = remainder
+        .split_once('/')
+        .ok_or_else(|| anyhow!("Git URL has no repository path: {original}"))?;
+    let host_and_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host)
+        .trim();
+    let host = host_and_port
+        .split_once(':')
+        .map_or(host_and_port, |(host, _)| host);
     Ok(ParsedIdentity {
         host: host.to_owned(),
-        path: url
-            .path()
+        path: path
+            .split(['?', '#'])
+            .next()
+            .unwrap_or_default()
             .trim_matches('/')
             .trim_end_matches(".git")
             .to_owned(),
@@ -121,6 +132,8 @@ mod tests {
             "https://github.com/acme/widgets.git",
             "git@github.com:acme/widgets.git",
             "ssh://git@github.com/acme/widgets.git",
+            "ssh://git@github.com:2222/acme/widgets.git",
+            "https://github.com/acme/widgets.git?ref=main#readme",
             "github.com/acme/widgets",
         ] {
             assert_eq!(
