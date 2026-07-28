@@ -11,7 +11,7 @@ use std::process::Command;
 
 use crate::{cli::UpgradeArgs, hash::sha256_hex, http, ui};
 use anyhow::{Context, Result, anyhow, bail};
-use serde::Deserialize;
+use ureq::ResponseExt;
 
 const RELEASE_REPOSITORY: &str = "wiedymi/shu";
 const PROGRESS_INTERVAL_BYTES: u64 = 256 * 1024;
@@ -26,21 +26,33 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     let target = release_target()?;
     let current = env::current_exe().context("could not determine Shu executable path")?;
     let asset = format!("shu-{target}{}", executable_extension());
-    let client = http::agent();
-    let version = release_version(&client, args.version.as_deref())?;
-    let base = release_base(&version);
     ui::heading("Upgrade");
     ui::detail("platform", target);
+    let client = http::agent();
+    let (version, manifest) = match args
+        .version
+        .as_deref()
+        .filter(|version| *version != "latest")
+    {
+        Some(requested) => {
+            let version = normalize_tag(requested);
+            ui::working("Downloading release manifest");
+            let manifest = get_text(&client, &format!("{}/SHA256SUMS", release_base(&version)))?;
+            (version, manifest)
+        }
+        None => {
+            ui::working("Finding latest release");
+            latest_release_manifest(&client)?
+        }
+    };
     ui::detail(
         "version",
         format!("{} → {version}", env!("CARGO_PKG_VERSION")),
     );
-    ui::working("Downloading release manifest");
-    let manifest = get_text(&client, &format!("{base}/SHA256SUMS"))?;
     ui::working("Reading release manifest");
     let expected = checksum_for(&manifest, &asset)?;
     ui::action(format!("Downloading {asset}"));
-    let binary = get_bytes(&client, &format!("{base}/{asset}"))?;
+    let binary = get_bytes(&client, &format!("{}/{asset}", release_base(&version)))?;
     ui::working("Verifying checksum");
     verify_checksum(&binary, &expected, &asset)?;
 
@@ -71,35 +83,38 @@ fn release_base(version: &str) -> String {
     format!("https://github.com/{RELEASE_REPOSITORY}/releases/download/{version}")
 }
 
-/// Resolve a named release or GitHub's current release to a visible tag.
-fn release_version(client: &ureq::Agent, requested: Option<&str>) -> Result<String> {
-    match requested.filter(|version| *version != "latest") {
-        Some(version) => Ok(normalize_tag(version)),
-        None => {
-            let response = http::get(
-                client,
-                &format!("https://api.github.com/repos/{RELEASE_REPOSITORY}/releases/latest"),
-                "latest release metadata",
-            )?;
-            let mut body = response.into_body();
-            let payload = body
-                .read_to_string()
-                .context("could not read latest release metadata")?;
-            let release: ReleaseMetadata = serde_json::from_str(&payload)
-                .context("could not parse latest release metadata")?;
-            Ok(normalize_tag(&release.tag_name))
-        }
-    }
+/// Download the latest manifest and derive its tag from GitHub's asset redirect.
+fn latest_release_manifest(client: &ureq::Agent) -> Result<(String, String)> {
+    let url =
+        format!("https://github.com/{RELEASE_REPOSITORY}/releases/latest/download/SHA256SUMS");
+    let mut response = http::get_with_redirect_history(client, &url, "latest release manifest")?;
+    let version = response
+        .get_redirect_history()
+        .into_iter()
+        .flatten()
+        .find_map(|uri| release_tag_from_uri(uri.path()))
+        .ok_or_else(|| {
+            anyhow!("could not determine the latest release version from GitHub's redirect")
+        })?;
+    let manifest = response
+        .body_mut()
+        .read_to_string()
+        .context("could not read latest release manifest")?;
+    Ok((version, manifest))
+}
+
+/// Extract a version tag from GitHub's stable release download path.
+fn release_tag_from_uri(path: &str) -> Option<String> {
+    let segments = path.split('/').collect::<Vec<_>>();
+    segments.windows(4).find_map(|window| match window {
+        ["releases", "download", tag, "SHA256SUMS"] if *tag != "latest" => Some(normalize_tag(tag)),
+        _ => None,
+    })
 }
 
 /// Keep release URLs and human output consistently tag-shaped.
 fn normalize_tag(version: &str) -> String {
     format!("v{}", version.trim_start_matches('v'))
-}
-
-#[derive(Deserialize)]
-struct ReleaseMetadata {
-    tag_name: String,
 }
 
 /// Return the release target matching the currently executing binary.
@@ -298,6 +313,18 @@ mod tests {
         assert_eq!(normalize_tag("0.1.0"), "v0.1.0");
         assert_eq!(normalize_tag("v0.1.0"), "v0.1.0");
         assert!(release_base("v0.1.0").ends_with("releases/download/v0.1.0"));
+    }
+
+    #[test]
+    fn reads_latest_tag_from_github_release_redirect() {
+        assert_eq!(
+            release_tag_from_uri("/wiedymi/shu/releases/download/v0.1.17/SHA256SUMS"),
+            Some("v0.1.17".to_owned())
+        );
+        assert_eq!(
+            release_tag_from_uri("/wiedymi/shu/releases/latest/download/SHA256SUMS"),
+            None
+        );
     }
 
     #[test]

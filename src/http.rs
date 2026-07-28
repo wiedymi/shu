@@ -36,6 +36,23 @@ pub fn get(agent: &Agent, url: &str, purpose: &str) -> Result<ureq::http::Respon
         .with_context(|| format!("could not download {purpose}: {url}"))
 }
 
+/// Send an HTTPS GET while retaining the redirect chain for callers that need
+/// the canonical location selected by a service.
+pub fn get_with_redirect_history(
+    agent: &Agent,
+    url: &str,
+    purpose: &str,
+) -> Result<ureq::http::Response<ureq::Body>> {
+    agent
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .config()
+        .save_redirect_history(true)
+        .build()
+        .call()
+        .with_context(|| format!("could not download {purpose}: {url}"))
+}
+
 /// Download a UTF-8 response body into memory.
 pub fn get_text(agent: &Agent, url: &str, purpose: &str) -> Result<String> {
     let mut response = get(agent, url, purpose)?;
