@@ -87,8 +87,9 @@ pub enum Commands {
     State(StateArgs),
     /// Mark a repository as archived without moving or deleting it.
     Archive(SelectorArgs),
-    /// Remove a repository from the catalog without deleting its local clone.
-    Forget(SelectorArgs),
+    /// Remove a repository from Shu's catalog without deleting its local clone or remote.
+    #[command(visible_alias = "forget")]
+    Remove(SelectorArgs),
     /// Interactively select a present local repository with Shu's fuzzy picker.
     Pick(PickArgs),
     /// Print shell integration that makes bare `shu` navigate into a selected repository.
