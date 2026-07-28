@@ -8,7 +8,10 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::cli::{Shell, ShellCommands, ShellInitArgs};
+use crate::{
+    cli::{Shell, ShellCommands, ShellInitArgs},
+    ui,
+};
 
 const BEGIN_MARKER: &str = "# >>> shu shell integration >>>";
 const END_MARKER: &str = "# <<< shu shell integration <<<";
@@ -33,13 +36,22 @@ fn init(args: &ShellInitArgs) -> Result<()> {
         None => default_profile(args.shell)?,
     };
     install(&path, script)?;
-    println!("Installed Shu navigation for {}.", shell_name(args.shell));
-    println!("  Startup file: {}", path.display());
-    println!(
-        "  Open a new {} session, then run `shu` to pick a repository.",
+    ui::success(format!(
+        "Installed Shu navigation for {}",
         shell_name(args.shell)
+    ));
+    ui::detail("startup", path.display());
+    ui::detail(
+        "next",
+        format!(
+            "open a new {} session, then run `shu`",
+            shell_name(args.shell)
+        ),
     );
-    println!("  This command cannot change the shell that is already running.");
+    ui::detail(
+        "note",
+        "this command cannot change the shell already running",
+    );
     Ok(())
 }
 

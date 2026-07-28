@@ -11,6 +11,7 @@ use crate::{
     git,
     model::{Catalog, Sync},
     paths::root_path,
+    ui,
 };
 
 /// Check the local Shu setup and report actionable failures.
@@ -258,7 +259,12 @@ fn render(cli: &Cli, checks: &[Check]) -> Result<()> {
             CheckStatus::Fail => "✗",
             CheckStatus::Skip => "-",
         };
-        println!("{marker} {}: {}", check.name, check.detail);
+        let line = format!("{}: {}", check.name, check.detail);
+        match check.status {
+            CheckStatus::Pass => ui::success(line),
+            CheckStatus::Fail => println!("{} {line}", ui::failure_marker()),
+            CheckStatus::Skip => println!("{marker} {line}"),
+        }
     }
     Ok(())
 }

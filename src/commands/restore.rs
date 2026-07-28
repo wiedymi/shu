@@ -17,7 +17,7 @@ use crate::{
     git, locations,
     model::{Catalog, Sync},
     paths::{absolute, repo_path, root_path},
-    sources,
+    sources, ui,
 };
 
 /// Restore a catalog source, if supplied, and clone all selected missing entries.
@@ -41,7 +41,7 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if !confirm_restore(cli, args, repo_indices.len())? {
-        println!("No changes made.");
+        ui::warning("No changes made.");
         return Ok(());
     }
     fs::create_dir_all(root_path(&catalog)?)?;
@@ -52,7 +52,7 @@ pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
         match restore_one(&mut catalog, index) {
             Ok(wrote_path) => changed |= wrote_path,
             Err(error) => {
-                eprintln!("! {source}: {error:#}");
+                ui::warning_to_stderr(format!("{source}: {error:#}"));
                 failures += 1;
             }
         }
@@ -109,6 +109,8 @@ fn sync_catalog(cli: &Cli) -> Result<()> {
         anyhow!("no Git catalog is configured; add [sync] to shu.toml before running `shu sync`")
     })?;
     let checkout = sync_checkout(&catalog, &sync)?;
+    ui::heading("Sync catalog");
+    ui::working(format!("Checking {}", sync.remote));
     verify_checkout(&checkout, &sync)?;
     let filename = sync_filename(&sync)?;
     git::output(&checkout, ["fetch", "origin", &sync.r#ref])?;
@@ -129,9 +131,10 @@ fn sync_catalog(cli: &Cli) -> Result<()> {
     }
     let local_content = catalog::portable_contents(&catalog)?;
     if fs::read_to_string(&remote_catalog)? == local_content {
-        println!("Catalog is already synced.");
+        ui::success("Catalog is already synced.");
         return Ok(());
     }
+    ui::action("Publish shu.toml");
     fs::write(&remote_catalog, local_content)?;
     let filename = filename
         .to_str()
@@ -148,7 +151,8 @@ fn sync_catalog(cli: &Cli) -> Result<()> {
         );
     }
     git::output(&checkout, ["push", "origin", &sync.r#ref])?;
-    println!("Synced catalog to {}.", sync.remote);
+    ui::success("Published shu.toml");
+    ui::detail("remote", sync.remote);
     Ok(())
 }
 
@@ -189,8 +193,11 @@ fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
             "catalog remote already has branches; use `shu restore {remote}` to activate it instead"
         );
     }
+    ui::heading("Set up catalog sync");
+    ui::action("Create catalog checkout");
     git::initialize(&checkout)?;
     if args.github {
+        ui::working("Creating private GitHub catalog repository");
         super::catalog::create_github_repository(&checkout, &identity, !args.public)?;
     } else {
         git::output(&checkout, ["remote", "add", "origin", &remote])?;
@@ -202,12 +209,13 @@ fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
     git::output(&checkout, ["add", "--", "shu.toml"])?;
     git::output(&checkout, ["commit", "-m", "Initialize Shu catalog"])
         .context("could not commit the catalog; configure your Git author identity first")?;
+    ui::working(format!("Publishing shu.toml to {remote}"));
     git::output(&checkout, ["push", "-u", "origin", "main"]).context(
         "could not publish the catalog; confirm the remote exists and Git access is configured",
     )?;
     catalog::save(&active_path, &synced_catalog)?;
-    println!("Initialized catalog sync at {remote}.");
-    println!("  Checkout: {}", checkout.display());
+    ui::success("Catalog sync is ready");
+    ui::detail("checkout", checkout.display());
     Ok(())
 }
 
@@ -267,7 +275,8 @@ pub fn ensure(cli: &Cli, args: &EnsureArgs) -> Result<()> {
     if args.path_only {
         println!("{}", target.display());
     } else {
-        println!("Ensured {name} at {}", target.display());
+        ui::success(format!("Ensured {name}"));
+        ui::detail("location", target.display());
     }
     Ok(())
 }
@@ -299,7 +308,7 @@ fn activate_source(cli: &Cli, args: &RestoreArgs, source: &str) -> Result<()> {
     let (_, mut active) = catalog::load_or_initialize(cli)?;
     catalog::merge_portable(&mut active, loaded)?;
     catalog::save(&catalog_path(cli)?, &active)?;
-    eprintln!("Using catalog from {source}");
+    ui::working(format!("Using catalog from {source}"));
     Ok(())
 }
 
@@ -347,7 +356,7 @@ fn activate_git_source(cli: &Cli, args: &RestoreArgs, remote: &str) -> Result<()
     }
     catalog::merge_portable(&mut active, loaded)?;
     catalog::save(&catalog_path(cli)?, &active)?;
-    eprintln!("Using catalog from {remote}");
+    ui::working(format!("Using catalog from {remote}"));
     Ok(())
 }
 
@@ -378,7 +387,8 @@ fn restore_one(catalog: &mut Catalog, index: usize) -> Result<bool> {
     let name = repo_name(&catalog.repos[index]).to_owned();
     let (path, cloned) = materialize(catalog, index)?;
     if !cloned {
-        println!("✓ {} already present at {}", name, path.display());
+        ui::success(format!("{name} already present"));
+        ui::detail("location", path.display());
     }
     Ok(cloned)
 }
@@ -399,7 +409,7 @@ pub(crate) fn materialize(catalog: &mut Catalog, index: usize) -> Result<(PathBu
             target.display()
         );
     } else {
-        eprintln!("↓ cloning {}", repo.source);
+        ui::working(format!("Cloning {}", repo.source));
         let source = repo.remote.as_deref().unwrap_or(&repo.source);
         git::clone(source, &target)?;
         let target = absolute(&target)?;
