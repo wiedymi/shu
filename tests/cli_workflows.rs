@@ -273,11 +273,75 @@ fn initializes_and_publishes_a_dedicated_catalog_checkout() {
     assert!(active.contains("[sync]"));
     assert!(active.contains("remote = \"https://github.com/example-org/catalog.git\""));
     let remote_catalog = run_git_output(&fixture.catalog_remote, ["show", "main:shu.toml"]);
-    assert_eq!(remote_catalog, active);
+    assert!(!remote_catalog.contains("root ="));
+    assert!(!remote_catalog.contains("paths ="));
+    assert!(!remote_catalog.contains("primary ="));
+    assert!(remote_catalog.contains("[sync]"));
     assert!(
         !active.contains("source = \"github.com/example-org/catalog\""),
         "the catalog repository must not become a picker entry"
     );
+}
+
+#[test]
+fn sync_keeps_external_locations_local_and_restores_managed_paths_per_machine() {
+    let fixture = Fixture::new();
+    let first = fixture.write_empty_catalog("first.toml");
+    let remote = "https://github.com/example-org/catalog.git";
+
+    fixture
+        .shu(["--catalog", first.to_str().unwrap(), "sync", "init", remote])
+        .assert_success();
+    fixture
+        .shu([
+            "--catalog",
+            first.to_str().unwrap(),
+            "add",
+            fixture.seed.to_str().unwrap(),
+        ])
+        .assert_success();
+    let first_content = fs::read_to_string(&first)
+        .unwrap()
+        .replace("remote = \"git@github.com:example-org/api.git\"\n", "");
+    fs::write(&first, &first_content).unwrap();
+    fixture
+        .shu(["--catalog", first.to_str().unwrap(), "sync"])
+        .assert_success();
+
+    assert!(first_content.contains(fixture.seed.to_string_lossy().as_ref()));
+    let synced = run_git_output(&fixture.catalog_remote, ["show", "main:shu.toml"]);
+    assert!(synced.contains("source = \"github.com/example-org/api\""));
+    assert!(!synced.contains("root ="));
+    assert!(!synced.contains(fixture.seed.to_string_lossy().as_ref()));
+    assert!(!synced.contains("paths ="));
+
+    let second_root = fixture.temp.path().join("second-library");
+    let second = fixture.temp.path().join("second.toml");
+    fs::write(
+        &second,
+        format!("version = 1\nroot = \"{}\"\n", second_root.display()),
+    )
+    .unwrap();
+    fixture
+        .shu([
+            "--catalog",
+            second.to_str().unwrap(),
+            "--yes",
+            "restore",
+            remote,
+        ])
+        .assert_success();
+
+    let expected = second_root.join("github.com/example-org/api");
+    assert!(expected.join(".git").is_dir());
+    let second_content = fs::read_to_string(&second).unwrap();
+    assert!(second_content.contains(&format!("root = \"{}\"", second_root.display())));
+    let second_catalog: toml::Value = toml::from_str(&second_content).unwrap();
+    assert_eq!(
+        second_catalog["repos"][0]["paths"].as_array().unwrap()[0].as_str(),
+        Some("github.com/example-org/api")
+    );
+    assert!(!second_content.contains(fixture.seed.to_string_lossy().as_ref()));
 }
 
 #[test]

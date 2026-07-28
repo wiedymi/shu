@@ -17,6 +17,7 @@ use crate::{
     commands::restore,
     git,
     identity::normalize_identity,
+    locations,
     model::{Catalog, Lifecycle, Repo},
     paths::{absolute, root_path},
     ui,
@@ -56,12 +57,11 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     let local_path = local_source_path(&args.source)?;
     if let Some(index) = existing_repo_index(&catalog, &identity) {
         if let Some(local_path) = local_path {
-            let repo = &mut catalog.repos[index];
-            if repo.remote.is_none() {
-                repo.remote = remote;
+            if catalog.repos[index].remote.is_none() {
+                catalog.repos[index].remote = remote;
             }
-            remember_path(repo, &local_path)?;
-            let name = catalog::repo_name(repo).to_owned();
+            remember_path(&mut catalog, index, &local_path)?;
+            let name = catalog::repo_name(&catalog.repos[index]).to_owned();
             catalog::save(&path, &catalog)?;
             println!("Already catalogued {name}");
             println!("  Local clone: {}", local_path.display());
@@ -78,10 +78,8 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     }
     add_entry(&mut catalog, args, &identity, remote);
     if let Some(local_path) = &local_path {
-        remember_path(
-            catalog.repos.last_mut().expect("entry was just added"),
-            local_path,
-        )?;
+        let index = catalog.repos.len() - 1;
+        remember_path(&mut catalog, index, local_path)?;
     }
     let index = catalog.repos.len() - 1;
     let local_path = match local_path {
@@ -126,10 +124,8 @@ pub fn new(cli: &Cli, args: &NewArgs) -> Result<()> {
         &args.tag,
         args.note.clone(),
     );
-    remember_path(
-        catalog.repos.last_mut().expect("entry was just added"),
-        &target,
-    )?;
+    let index = catalog.repos.len() - 1;
+    remember_path(&mut catalog, index, &target)?;
     catalog::save(&catalog_path, &catalog)?;
     println!("Created {identity}");
     println!("  Local repository: {}", target.display());
@@ -205,7 +201,9 @@ fn migrate_and_add(cli: &Cli, args: &AddArgs, path: &Path, catalog: &mut Catalog
             existing,
             false,
         )?;
-        replace_path(catalog_repo_mut(catalog, &identity)?, &source, &destination)?;
+        let index = existing_repo_index(catalog, &identity)
+            .expect("catalog entry was added or already present");
+        replace_path(catalog, index, &source, &destination)?;
         catalog::save(path, catalog)?;
         return Ok(());
     }
@@ -275,7 +273,9 @@ fn migrate_and_add(cli: &Cli, args: &AddArgs, path: &Path, catalog: &mut Catalog
         existing,
         true,
     )?;
-    replace_path(catalog_repo_mut(catalog, &identity)?, &source, &destination)?;
+    let index = existing_repo_index(catalog, &identity)
+        .expect("catalog entry was added or already present");
+    replace_path(catalog, index, &source, &destination)?;
     catalog::save(path, catalog)
 }
 
@@ -384,9 +384,10 @@ fn finish_catalog_add(
     moved: bool,
 ) -> Result<()> {
     if existing {
-        let repo = catalog_repo_mut(catalog, identity)?;
-        if repo.remote.is_none() {
-            repo.remote = remote;
+        let index = existing_repo_index(catalog, identity)
+            .expect("existing repository was checked before migration");
+        if catalog.repos[index].remote.is_none() {
+            catalog.repos[index].remote = remote;
         }
         println!(
             "  {} Preserved existing catalog metadata",
@@ -417,15 +418,6 @@ fn existing_repo_index(catalog: &Catalog, identity: &str) -> Option<usize> {
         .repos
         .iter()
         .position(|repo| normalize_identity(&repo.source).ok().as_deref() == Some(identity))
-}
-
-/// Return the mutable catalog entry for an identity that was just materialized.
-fn catalog_repo_mut<'a>(catalog: &'a mut Catalog, identity: &str) -> Result<&'a mut Repo> {
-    catalog
-        .repos
-        .iter_mut()
-        .find(|repo| normalize_identity(&repo.source).ok().as_deref() == Some(identity))
-        .ok_or_else(|| anyhow!("catalog entry disappeared for {identity}"))
 }
 
 /// Add one catalog entry using the metadata supplied to `shu add`.
@@ -467,21 +459,36 @@ fn ssh_transport(source: &str) -> Option<String> {
 }
 
 /// Remember a clone path and choose it only when the current primary is invalid.
-fn remember_path(repo: &mut Repo, path: &Path) -> Result<()> {
+fn remember_path(catalog: &mut Catalog, index: usize, path: &Path) -> Result<()> {
     let path = absolute(path)?;
-    let replace_primary = repo
-        .primary_path()
+    let replace_primary = locations::primary_path(catalog, &catalog.repos[index])?
         .is_none_or(|primary| !git::is_repo(&primary));
-    repo.add_path(path.clone());
+    let stored = locations::store_local_path(catalog, &path)?;
+    let repo = &mut catalog.repos[index];
+    if !repo.paths.iter().any(|known| known == &stored) {
+        repo.paths.push(stored.clone());
+    }
     if replace_primary {
-        repo.primary = Some(path.display().to_string());
+        repo.primary = Some(stored);
     }
     Ok(())
 }
 
 /// Replace a moved source path with its canonical destination and prefer it.
-fn replace_path(repo: &mut Repo, source: &Path, destination: &Path) -> Result<()> {
-    repo.replace_path(&absolute(source)?, absolute(destination)?);
+fn replace_path(
+    catalog: &mut Catalog,
+    index: usize,
+    source: &Path,
+    destination: &Path,
+) -> Result<()> {
+    let source = locations::store_local_path(catalog, source)?;
+    let destination = locations::store_local_path(catalog, destination)?;
+    let repo = &mut catalog.repos[index];
+    repo.paths.retain(|known| known != &source);
+    if !repo.paths.iter().any(|known| known == &destination) {
+        repo.paths.push(destination.clone());
+    }
+    repo.primary = Some(destination);
     Ok(())
 }
 
@@ -654,11 +661,12 @@ fn import_discovered(cli: &Cli, found: &[(PathBuf, String, Option<String>)]) -> 
             });
             added += 1;
         }
-        let repo = catalog_repo_mut(&mut catalog, identity)?;
-        if repo.remote.is_none() {
-            repo.remote = remote.clone();
+        let index = existing_repo_index(&catalog, identity)
+            .expect("discovered repository was added or already present");
+        if catalog.repos[index].remote.is_none() {
+            catalog.repos[index].remote = remote.clone();
         }
-        remember_path(repo, local_path)?;
+        remember_path(&mut catalog, index, local_path)?;
     }
     catalog::save(&path, &catalog)?;
     println!("Added {added} repository entries to {}", path.display());

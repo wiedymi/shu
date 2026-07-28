@@ -42,8 +42,8 @@ Shu reads the repository's root-level `shu.toml`, puts missing repositories
 under `~/shu` by default, and leaves existing repositories alone. `shu add .`
 adds that current clone to the repository's `paths` list in the same catalog,
 so it remains available to `shu`, `shu path`, and the picker without an
-unnecessary move. If you start with an empty machine, everyday commands create
-an empty local catalog for you.
+unnecessary move. Those locations stay on the current machine. If you start
+with an empty machine, everyday commands create an empty local catalog for you.
 
 ## Install
 
@@ -129,28 +129,30 @@ state = "active"
 tags = ["personal", "rust"]
 note = "A project I work on regularly"
 paths = [
+  "github.com/your-name/project",
   "C:/Users/you/Projects/project",
-  "C:/Users/you/shu/github.com/your-name/project",
 ]
-primary = "C:/Users/you/Projects/project"
+primary = "github.com/your-name/project"
 ```
 
 | Field | Meaning | Default |
 | --- | --- | --- |
 | `version` | Catalog format version. | Required; currently `1`. |
-| `root` | Canonical destination used by `shu add`, `shu clone`, and `shu restore` for a repository that has no usable local clone. | `~/shu` |
+| `root` | Local canonical destination used by `shu add`, `shu clone`, and `shu restore` for a repository that has no usable local clone. | `~/shu` |
 | `repos[].source` | Repository identity: `host/namespace/repository`. HTTPS and SSH URLs are normalized to this form by `shu add`. | Required. |
 | `repos[].remote` | Explicit SSH transport preserved for later clones. Omitted for normal HTTPS cloning. | Optional. |
 | `repos[].state` | Your lifecycle label: `active`, `parked`, `reference`, or `archived`. It is never inferred from age. | `active` |
 | `repos[].tags` | Optional labels for filtering and grouping. | `[]` |
 | `repos[].note` | Optional human context about why the repository is kept. | Absent |
-| `repos[].paths` | Every known full clone of the repository. `shu add .` appends the current clone without moving it. | `[]` |
-| `repos[].primary` | The clone Shu prefers for `shu path` and the first picker result. | The first valid path, then the managed path. |
+| `repos[].paths` | Local full-clone paths. Paths below `root` are relative; external paths are absolute. | `[]` |
+| `repos[].primary` | Local clone preference for `shu path` and the first picker result. | The first valid path, then the managed path. |
 
-`paths` holds normal full-clone roots. A path that does not exist on the
-current computer is ignored safely, which makes one catalog usable across your
-machines. Git worktrees are deliberately not stored: Shu discovers them from
-each valid clone every time it opens the picker or runs `shu locations`.
+`paths`, `primary`, and `root` describe only the current machine. A managed
+path is stored relative to `root`, so `github.com/your-name/project` resolves
+to `~/shu/github.com/your-name/project` on one machine and that machine's
+configured root on another. An external clone remains absolute and local.
+Git worktrees are deliberately not stored: Shu discovers them from each valid
+clone every time it opens the picker or runs `shu locations`.
 
 `root` does not move anything by itself. It only determines the canonical
 managed destination:
@@ -281,7 +283,10 @@ It is not added to `[[repos]]`, so it never appears in your repository picker.
 `sync` uses your existing Git credentials. It refuses a dirty checkout or a
 remote change that has not been restored first; run `shu restore` again to
 review the remote version. It never stores credentials, force-pushes, resets,
-or merges changes.
+or merges changes. The synced Git catalog contains only portable repository
+metadata (`source`, `remote`, lifecycle, tags, notes, and `[sync]`). Local
+`root`, `paths`, and `primary` remain in each machine's active `shu.toml` and
+are merged back after `shu restore` or `shu update`.
 
 ## Command model
 

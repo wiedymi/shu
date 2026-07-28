@@ -6,6 +6,7 @@ trap 'rm -rf "$workspace"' EXIT
 
 mkdir -p "$workspace/remotes"
 git init --bare "$workspace/remotes/api.git" >/dev/null
+git init --bare "$workspace/remotes/catalog.git" >/dev/null
 git init "$workspace/seed" >/dev/null
 printf 'fixture\n' > "$workspace/seed/README.md"
 git -C "$workspace/seed" add README.md
@@ -32,7 +33,8 @@ shu --catalog "$workspace/shu.toml" --yes restore
 path="$(shu --catalog "$workspace/shu.toml" ensure api --path-only)"
 test "$path" = "$workspace/library/github.com/example-org/api"
 test -d "$path/.git"
-shu --catalog "$workspace/shu.toml" doctor | grep -q '^✓ catalog:'
+GIT_AUTHOR_NAME='Shu Test' GIT_AUTHOR_EMAIL='shu@example.invalid' \
+  shu --catalog "$workspace/shu.toml" doctor | grep -q '^✓ catalog:'
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$path"
 shu --catalog "$workspace/shu.toml" --json list | grep -q '"observed_state": "present"'
 
@@ -45,6 +47,26 @@ GIT_CONFIG_COUNT=0 shu --catalog "$workspace/shu.toml" add "$workspace/seed"
 shu --catalog "$workspace/shu.toml" locations api --primary "$workspace/seed"
 test "$(shu --catalog "$workspace/shu.toml" ensure api --path-only)" = "$workspace/seed"
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$workspace/seed"
+
+# Sync publishes repository metadata only. Root-relative managed paths and
+# arbitrary external clone paths remain local to this machine.
+GIT_AUTHOR_NAME='Shu Test' GIT_AUTHOR_EMAIL='shu@example.invalid' \
+GIT_COMMITTER_NAME='Shu Test' GIT_COMMITTER_EMAIL='shu@example.invalid' \
+  shu --catalog "$workspace/shu.toml" sync init github.com/example-org/catalog
+synced="$(git --git-dir "$workspace/remotes/catalog.git" show main:shu.toml)"
+printf '%s\n' "$synced" | grep -q 'source = "github.com/example-org/api"'
+! printf '%s\n' "$synced" | grep -q 'root ='
+! printf '%s\n' "$synced" | grep -q "$workspace/seed"
+! printf '%s\n' "$synced" | grep -q 'paths ='
+
+cat > "$workspace/second.toml" <<EOF
+version = 1
+root = "$workspace/second-library"
+EOF
+shu --catalog "$workspace/second.toml" --yes restore github.com/example-org/catalog
+test -d "$workspace/second-library/github.com/example-org/api/.git"
+grep -q '"github.com/example-org/api"' "$workspace/second.toml"
+! grep -q "$workspace/seed" "$workspace/second.toml"
 
 # Shell setup is persistent and idempotent. Use an explicit file in the
 # container so this checks the same setup path without changing a real shell
@@ -66,8 +88,13 @@ test -d "$workspace/library/github.com/example-org/migrated/.git"
 # release payload. The fake curl command gives the installer the same
 # command-line contract it has when downloading a GitHub Release.
 mkdir -p "$workspace/release-assets" "$workspace/fake-bin" "$workspace/installed"
-cp /usr/local/bin/shu "$workspace/release-assets/shu-x86_64-unknown-linux-musl"
-(cd "$workspace/release-assets" && sha256sum shu-x86_64-unknown-linux-musl > SHA256SUMS)
+case "$(uname -m)" in
+    x86_64) target='x86_64-unknown-linux-musl' ;;
+    aarch64|arm64) target='aarch64-unknown-linux-musl' ;;
+    *) echo "unsupported Linux architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+cp /usr/local/bin/shu "$workspace/release-assets/shu-$target"
+(cd "$workspace/release-assets" && sha256sum "shu-$target" > SHA256SUMS)
 cat > "$workspace/fake-bin/curl" <<'EOF'
 #!/bin/sh
 set -eu

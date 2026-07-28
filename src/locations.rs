@@ -4,14 +4,14 @@
 //! after `shu add .`. This module asks Git for linked worktrees when they are
 //! needed, without ever storing worktree state itself.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use crate::{
     git,
     model::{Catalog, Repo},
-    paths::{absolute, repo_path},
+    paths::{absolute, repo_path, root_path},
 };
 
 /// Return the canonical destination derived from the catalog root and identity.
@@ -20,17 +20,19 @@ pub fn managed_path(catalog: &Catalog, repo: &Repo) -> Result<PathBuf> {
 }
 
 /// Return every remembered clone path, including paths that have gone stale.
-pub fn remembered_paths(repo: &Repo) -> Result<Vec<PathBuf>> {
+pub fn remembered_paths(catalog: &Catalog, repo: &Repo) -> Result<Vec<PathBuf>> {
     repo.paths
         .iter()
-        .map(PathBuf::from)
-        .map(|path| absolute(&path))
+        .map(|path| resolve_local_path(catalog, path))
         .collect()
 }
 
 /// Return the explicitly selected clone path, including a stale path.
-pub fn primary_path(repo: &Repo) -> Result<Option<PathBuf>> {
-    repo.primary_path().map(|path| absolute(&path)).transpose()
+pub fn primary_path(catalog: &Catalog, repo: &Repo) -> Result<Option<PathBuf>> {
+    repo.primary
+        .as_deref()
+        .map(|path| resolve_local_path(catalog, path))
+        .transpose()
 }
 
 /// Return every valid full clone known for a repository on this machine.
@@ -39,7 +41,7 @@ pub fn primary_path(repo: &Repo) -> Result<Option<PathBuf>> {
 /// location is included when it is a valid repository even if it is absent
 /// from the catalog's `paths` list.
 pub fn present_paths(catalog: &Catalog, repo: &Repo) -> Result<Vec<PathBuf>> {
-    let mut paths = remembered_paths(repo)?
+    let mut paths = remembered_paths(catalog, repo)?
         .into_iter()
         .filter(|path| git::is_repo(path))
         .collect::<Vec<_>>();
@@ -55,12 +57,34 @@ pub fn present_paths(catalog: &Catalog, repo: &Repo) -> Result<Vec<PathBuf>> {
 /// An explicitly selected, valid primary clone wins. Otherwise Shu uses the
 /// first valid remembered path, then the canonical managed location.
 pub fn present_path(catalog: &Catalog, repo: &Repo) -> Result<Option<PathBuf>> {
-    if let Some(primary) = primary_path(repo)?
+    if let Some(primary) = primary_path(catalog, repo)?
         && git::is_repo(&primary)
     {
         return Ok(Some(primary));
     }
     Ok(present_paths(catalog, repo)?.into_iter().next())
+}
+
+/// Store a local path in its portable managed form when it resides below root.
+pub fn store_local_path(catalog: &Catalog, path: &Path) -> Result<String> {
+    let path = absolute(path)?;
+    let root = absolute(&root_path(catalog)?)?;
+    if let Ok(relative) = path.strip_prefix(root)
+        && !relative.as_os_str().is_empty()
+    {
+        return Ok(relative.display().to_string());
+    }
+    Ok(path.display().to_string())
+}
+
+/// Resolve a stored location relative to the local root, unless it is external.
+fn resolve_local_path(catalog: &Catalog, path: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        absolute(&path)
+    } else {
+        absolute(&root_path(catalog)?.join(path))
+    }
 }
 
 /// Return all present clone and linked-worktree paths for picker discovery.

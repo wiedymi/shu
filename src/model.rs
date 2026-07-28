@@ -1,7 +1,5 @@
 //! `shu.toml` types and machine-readable output structures.
 
-use std::path::{Path, PathBuf};
-
 use serde::{Deserialize, Serialize};
 
 use clap::ValueEnum;
@@ -67,43 +65,15 @@ pub struct Repo {
     /// Optional context explaining why the repository is retained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Full clone roots known for this repository on the current machine.
+    /// Clone paths known on the current machine.
     ///
-    /// Paths are intentionally stored in the single `shu.toml` catalog so the
-    /// user can inspect and edit all Shu state in one readable file. Missing
-    /// paths are harmless on another machine; Shu simply ignores them until a
-    /// valid local clone exists.
+    /// Managed paths are stored relative to the local catalog root. External
+    /// paths are absolute and deliberately excluded from the synced catalog.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     /// Preferred local clone path used when a command needs one destination.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary: Option<String>,
-}
-
-impl Repo {
-    /// Add a clone path once, preserving the order in which paths were added.
-    pub fn add_path(&mut self, path: PathBuf) {
-        let value = path.display().to_string();
-        if !self.paths.iter().any(|known| known == &value) {
-            self.paths.push(value);
-        }
-    }
-
-    /// Replace a moved clone path and make its destination the preferred clone.
-    pub fn replace_path(&mut self, source: &Path, destination: PathBuf) {
-        let source = source.display().to_string();
-        let destination = destination.display().to_string();
-        self.paths.retain(|known| known != &source);
-        if !self.paths.iter().any(|known| known == &destination) {
-            self.paths.push(destination.clone());
-        }
-        self.primary = Some(destination);
-    }
-
-    /// Return the explicit preferred clone path, if the catalog has one.
-    pub fn primary_path(&self) -> Option<PathBuf> {
-        self.primary.as_ref().map(PathBuf::from)
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
