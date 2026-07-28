@@ -170,6 +170,7 @@ mod tests {
             repos: vec![
                 Repo {
                     source: "github.com/acme/widgets".into(),
+                    remote: None,
                     state: Lifecycle::Active,
                     tags: vec![],
                     note: None,
@@ -178,6 +179,7 @@ mod tests {
                 },
                 Repo {
                     source: "github.com/acme/api".into(),
+                    remote: None,
                     state: Lifecycle::Parked,
                     tags: vec![],
                     note: None,

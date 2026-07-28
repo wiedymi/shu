@@ -50,11 +50,16 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     if args.migrate {
         return migrate_and_add(cli, args, &path, &mut catalog);
     }
-    let identity = normalize_identity(&catalog::source_from_argument(&args.source)?)?;
+    let source = catalog::source_from_argument(&args.source)?;
+    let identity = normalize_identity(&source)?;
+    let remote = ssh_transport(&source);
     let local_path = local_source_path(&args.source)?;
     if let Some(index) = existing_repo_index(&catalog, &identity) {
         if let Some(local_path) = local_path {
             let repo = &mut catalog.repos[index];
+            if repo.remote.is_none() {
+                repo.remote = remote;
+            }
             remember_path(repo, &local_path)?;
             let name = catalog::repo_name(repo).to_owned();
             catalog::save(&path, &catalog)?;
@@ -71,7 +76,7 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         println!("  Local clone: {}", local_path.display());
         return Ok(());
     }
-    add_entry(&mut catalog, args, &identity);
+    add_entry(&mut catalog, args, &identity, remote);
     if let Some(local_path) = &local_path {
         remember_path(
             catalog.repos.last_mut().expect("entry was just added"),
@@ -111,11 +116,12 @@ pub fn new(cli: &Cli, args: &NewArgs) -> Result<()> {
     }
     git::initialize(&target)?;
     if args.github {
-        create_github_repository(&target, &identity, args.private)?;
+        create_github_repository(&target, &identity, !args.public)?;
     }
     add_entry_with(
         &mut catalog,
         &identity,
+        None,
         args.state,
         &args.tag,
         args.note.clone(),
@@ -190,7 +196,15 @@ fn migrate_and_add(cli: &Cli, args: &AddArgs, path: &Path, catalog: &mut Catalog
             println!("\nDry run: no files or catalog entries were changed.");
             return Ok(());
         }
-        finish_catalog_add(path, catalog, args, &identity, existing, false)?;
+        finish_catalog_add(
+            path,
+            catalog,
+            args,
+            &identity,
+            ssh_transport(&remote),
+            existing,
+            false,
+        )?;
         replace_path(catalog_repo_mut(catalog, &identity)?, &source, &destination)?;
         catalog::save(path, catalog)?;
         return Ok(());
@@ -252,7 +266,15 @@ fn migrate_and_add(cli: &Cli, args: &AddArgs, path: &Path, catalog: &mut Catalog
         )
     })?;
     println!("  {} Moved repository", ui::success_marker());
-    finish_catalog_add(path, catalog, args, &identity, existing, true)?;
+    finish_catalog_add(
+        path,
+        catalog,
+        args,
+        &identity,
+        ssh_transport(&remote),
+        existing,
+        true,
+    )?;
     replace_path(catalog_repo_mut(catalog, &identity)?, &source, &destination)?;
     catalog::save(path, catalog)
 }
@@ -357,16 +379,21 @@ fn finish_catalog_add(
     catalog: &mut Catalog,
     args: &AddArgs,
     identity: &str,
+    remote: Option<String>,
     existing: bool,
     moved: bool,
 ) -> Result<()> {
     if existing {
+        let repo = catalog_repo_mut(catalog, identity)?;
+        if repo.remote.is_none() {
+            repo.remote = remote;
+        }
         println!(
             "  {} Preserved existing catalog metadata",
             ui::success_marker()
         );
     } else {
-        add_entry(catalog, args, identity);
+        add_entry(catalog, args, identity, remote);
         catalog::save(path, catalog)?;
         println!("  {} Added to catalog", ui::success_marker());
     }
@@ -402,26 +429,41 @@ fn catalog_repo_mut<'a>(catalog: &'a mut Catalog, identity: &str) -> Result<&'a 
 }
 
 /// Add one catalog entry using the metadata supplied to `shu add`.
-fn add_entry(catalog: &mut Catalog, args: &AddArgs, identity: &str) {
-    add_entry_with(catalog, identity, args.state, &args.tag, args.note.clone());
+fn add_entry(catalog: &mut Catalog, args: &AddArgs, identity: &str, remote: Option<String>) {
+    add_entry_with(
+        catalog,
+        identity,
+        remote,
+        args.state,
+        &args.tag,
+        args.note.clone(),
+    );
 }
 
 /// Add a catalog entry from shared repository metadata.
 fn add_entry_with(
     catalog: &mut Catalog,
     identity: &str,
+    remote: Option<String>,
     state: Lifecycle,
     tags: &[String],
     note: Option<String>,
 ) {
     catalog.repos.push(Repo {
         source: identity.to_owned(),
+        remote,
         state,
         tags: catalog::unique(tags.to_vec()),
         note,
         paths: vec![],
         primary: None,
     });
+}
+
+/// Preserve only an explicit SSH transport; canonical identities use HTTPS.
+fn ssh_transport(source: &str) -> Option<String> {
+    let source = source.trim();
+    (source.starts_with("git@") || source.starts_with("ssh://")).then(|| source.to_owned())
 }
 
 /// Remember a clone path and choose it only when the current primary is invalid.
@@ -484,13 +526,13 @@ pub fn scan(cli: &Cli, args: &ScanArgs) -> Result<()> {
             serde_json::to_string_pretty(
                 &found
                     .iter()
-                    .map(|(path, identity)| serde_json::json!({"path": path, "identity": identity}))
+                    .map(|(path, identity, _)| serde_json::json!({"path": path, "identity": identity}))
                     .collect::<Vec<_>>()
             )?
         );
         Ok(())
     } else {
-        for (path, identity) in found {
+        for (path, identity, _) in found {
             let path = path.strip_prefix(&args.directory).unwrap_or(&path);
             print_scan_result(&identity, &path.display().to_string());
         }
@@ -554,7 +596,7 @@ pub fn forget(cli: &Cli, args: &SelectorArgs) -> Result<()> {
 }
 
 /// Find repositories with an `origin` remote outside hidden directory trees.
-pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
+pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String, Option<String>)>> {
     if !root.exists() {
         bail!("scan directory does not exist: {}", root.display());
     }
@@ -578,7 +620,7 @@ pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
         if let Ok(remote) = git::output(entry.path(), ["remote", "get-url", "origin"])
             && let Ok(identity) = normalize_identity(&remote)
         {
-            found.push((entry.path().to_path_buf(), identity));
+            found.push((entry.path().to_path_buf(), identity, ssh_transport(&remote)));
         }
     }
     found.sort_by(|left, right| left.1.cmp(&right.1));
@@ -591,7 +633,7 @@ fn is_visible_scan_entry(entry: &DirEntry) -> bool {
 }
 
 /// Add only identities that are not already in the catalog.
-fn import_discovered(cli: &Cli, found: &[(PathBuf, String)]) -> Result<()> {
+fn import_discovered(cli: &Cli, found: &[(PathBuf, String, Option<String>)]) -> Result<()> {
     let (path, mut catalog) = catalog::load_or_initialize(cli)?;
     let mut known: HashSet<String> = catalog
         .repos
@@ -599,10 +641,11 @@ fn import_discovered(cli: &Cli, found: &[(PathBuf, String)]) -> Result<()> {
         .filter_map(|repo| normalize_identity(&repo.source).ok())
         .collect();
     let mut added = 0;
-    for (local_path, identity) in found {
+    for (local_path, identity, remote) in found {
         if known.insert(identity.clone()) {
             catalog.repos.push(Repo {
                 source: identity.clone(),
+                remote: remote.clone(),
                 state: Lifecycle::Active,
                 tags: vec![],
                 note: None,
@@ -612,6 +655,9 @@ fn import_discovered(cli: &Cli, found: &[(PathBuf, String)]) -> Result<()> {
             added += 1;
         }
         let repo = catalog_repo_mut(&mut catalog, identity)?;
+        if repo.remote.is_none() {
+            repo.remote = remote.clone();
+        }
         remember_path(repo, local_path)?;
     }
     catalog::save(&path, &catalog)?;

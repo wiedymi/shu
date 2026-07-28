@@ -167,6 +167,11 @@ fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
     if args.github {
         super::catalog::ensure_github_ready()?;
     }
+    if !git::has_author_identity()? {
+        bail!(
+            "Git author identity is not configured; set user.name and user.email before `shu sync init`"
+        );
+    }
     let sync = Sync {
         remote: remote.clone(),
         file: "shu.toml".into(),
@@ -179,9 +184,14 @@ fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
             checkout.display()
         );
     }
+    if !args.github && git::remote_has_heads(&remote)? {
+        bail!(
+            "catalog remote already has branches; use `shu restore {remote}` to activate it instead"
+        );
+    }
     git::initialize(&checkout)?;
     if args.github {
-        super::catalog::create_github_repository(&checkout, &identity, args.private)?;
+        super::catalog::create_github_repository(&checkout, &identity, !args.public)?;
     } else {
         git::output(&checkout, ["remote", "add", "origin", &remote])?;
     }
@@ -387,7 +397,8 @@ pub(crate) fn materialize(catalog: &mut Catalog, index: usize) -> Result<(PathBu
         );
     } else {
         eprintln!("↓ cloning {}", repo.source);
-        git::clone(&repo.source, &target)?;
+        let source = repo.remote.as_deref().unwrap_or(&repo.source);
+        git::clone(source, &target)?;
         let target = absolute(&target)?;
         remember_new_clone(&mut catalog.repos[index], &target);
         Ok((target, true))

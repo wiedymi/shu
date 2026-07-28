@@ -7,6 +7,25 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-07-28
+
+### Added
+
+- `shu sync init` now checks Git author configuration before creating a remote
+  and refuses already-populated catalog remotes with an activation hint.
+- `shu doctor` reports Git author readiness; `--check-source` now verifies that
+  the configured catalog remote and ref are reachable.
+- Explicit SSH remotes added through `shu add`, migration, or scan are retained
+  in `repos[].remote` so `shu ensure` and `shu restore` keep using SSH.
+
+### Changed
+
+- GitHub repositories created by `shu new --github` and `shu sync init --github`
+  are private by default; `--public` makes publication intentional.
+- `--json` now rejects commands without a stable JSON response contract.
+- The setup and sync documentation now describes the supported Git catalog flow,
+  command roles, and read-only Gist behavior.
+
 ## [0.1.13] - 2026-07-28
 
 ### Added
@@ -230,7 +249,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/wiedymi/shu/compare/v0.1.13...v0.1.14
 [0.1.11]: https://github.com/wiedymi/shu/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wiedymi/shu/compare/v0.1.9...v0.1.10
 [0.1.6]: https://github.com/wiedymi/shu/compare/v0.1.5...v0.1.6

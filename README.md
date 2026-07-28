@@ -17,15 +17,20 @@ project lives locally.
 
 ## Get started
 
-Create a catalog beside your other personal configuration, then commit it to a
-private repository or Gist:
+Create a private, synced catalog. This creates the GitHub repository, commits
+the initial `shu.toml`, and makes it your active catalog:
 
 ```sh
-shu --catalog ./shu.toml init
-shu --catalog ./shu.toml add .
-shu --catalog ./shu.toml add github.com/example-org/useful-project --state reference # clones it
-git add shu.toml
+shu doctor --check-github
+shu sync init github.com/you/shu-catalog --github
+shu add .
+shu add github.com/example-org/useful-project --state reference
+shu sync
 ```
+
+`--github` creates a private repository by default. Add `--public` only when
+you intentionally want a public repository. If you already created an empty
+remote with another provider, use `shu sync init <remote>` instead.
 
 On a new machine:
 
@@ -98,8 +103,8 @@ The picker offers repositories that are actually present on this machine,
 including every existing clone recorded with `shu add .` and real Git
 worktrees discovered dynamically from those clones. `--migrate` remains the
 explicit option to move a clean clone into Shu's managed root. If `shu status`
-shows a repository as **missing**, restore it with `shu add <repository>` or run
-`shu add .` from the existing clone to record it.
+shows a repository as **missing**, materialize it with `shu ensure <repository>`;
+run `shu add .` from an existing clone to record it.
 
 For scripts and agents:
 
@@ -135,6 +140,7 @@ primary = "C:/Users/you/Projects/project"
 | `version` | Catalog format version. | Required; currently `1`. |
 | `root` | Canonical destination used by `shu add`, `shu clone`, and `shu restore` for a repository that has no usable local clone. | `~/shu` |
 | `repos[].source` | Repository identity: `host/namespace/repository`. HTTPS and SSH URLs are normalized to this form by `shu add`. | Required. |
+| `repos[].remote` | Explicit SSH transport preserved for later clones. Omitted for normal HTTPS cloning. | Optional. |
 | `repos[].state` | Your lifecycle label: `active`, `parked`, `reference`, or `archived`. It is never inferred from age. | `active` |
 | `repos[].tags` | Optional labels for filtering and grouping. | `[]` |
 | `repos[].note` | Optional human context about why the repository is kept. | Absent |
@@ -218,10 +224,11 @@ repository explicitly, use the authenticated GitHub CLI:
 
 ```sh
 shu doctor --check-github
-shu new github.com/you/private-project --github --private
+shu new github.com/you/private-project --github
 ```
 
-`--github` is optional and provider-specific. If it is unavailable or lacks
+`--github` is optional and provider-specific; it creates a private repository
+unless you pass `--public`. If it is unavailable or lacks
 permission, Shu leaves the catalog unchanged and explains how to create the
 remote manually.
 
@@ -234,11 +241,12 @@ shu upgrade             # Install the latest verified Shu release
 
 ## Syncing a private catalog
 
-Shu does not create repositories or manage credentials. Create a private Git
-repository with your preferred provider, or let Shu create one through `gh`:
+Shu uses a normal Git checkout and your existing credentials; it does not store
+credentials or create sidecar state. Create an empty private Git repository
+with your preferred provider, or let Shu create one through `gh`:
 
 ```sh
-shu sync init github.com/you/shu-catalog --github --private
+shu sync init github.com/you/shu-catalog --github
 ```
 
 This creates a dedicated catalog checkout, commits the active catalog, pushes
@@ -249,20 +257,15 @@ This creates a dedicated catalog checkout, commits the active catalog, pushes
 shu doctor --check-github
 ```
 
-To use an already-created remote, run `shu sync init <remote>` instead. In
-both cases Shu writes this configuration into the catalog:
+To use an already-created remote, it must have no branches; run `shu sync init
+<remote>`. For a remote that already contains a Shu catalog, use `shu restore
+<remote>` instead. `sync init` writes this configuration into the catalog:
 
 ```toml
 [sync]
 remote = "git@github.com:you/shu-catalog.git"
 file = "shu.toml"
 ref = "main"
-```
-
-Then make it active once:
-
-```sh
-shu restore git@github.com:you/shu-catalog.git
 ```
 
 After changing the local catalog, publish it with:
@@ -279,6 +282,18 @@ It is not added to `[[repos]]`, so it never appears in your repository picker.
 remote change that has not been restored first; run `shu restore` again to
 review the remote version. It never stores credentials, force-pushes, resets,
 or merges changes.
+
+## Command model
+
+- `shu new`: create and catalogue a local repository.
+- `shu add` / `shu clone`: register an existing clone, or register and clone a remote.
+- `shu ensure`: materialize one already-catalogued repository and print its path.
+- `shu restore`: restore all missing repositories, optionally after loading a catalog source.
+- `shu sync`: commit and push catalog edits; `shu update`: pull catalog edits and restore missing repositories.
+
+A Git repository containing `shu.toml` can be restored only when that file has
+a matching `[sync]` table. A GitHub Gist is a read-only catalog source: it can
+be restored, but cannot be used with `shu sync` or `shu update`.
 
 If a clone or release download is unavailable, Shu reports what failed and
 suggests checking the path, network connection, or Git access. It does not try

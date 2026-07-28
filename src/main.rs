@@ -49,6 +49,7 @@ fn main() {
 /// Parse arguments and dispatch the selected command implementation.
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    validate_json(&cli)?;
     match &cli.command {
         None => commands::pick(&cli, &Default::default()),
         Some(Commands::Init) => commands::init(&cli),
@@ -73,5 +74,24 @@ fn run() -> Result<()> {
         Some(Commands::Forget(args)) => commands::forget(&cli, args),
         Some(Commands::Pick(args)) => commands::pick(&cli, args),
         Some(Commands::Shell(args)) => commands::shell(&args.command),
+    }
+}
+
+/// Reject JSON where the command has no stable machine-readable response.
+fn validate_json(cli: &Cli) -> Result<()> {
+    if !cli.json {
+        return Ok(());
+    }
+    let supported = match &cli.command {
+        Some(Commands::Doctor(_)) | Some(Commands::Status(_)) | Some(Commands::List(_)) => true,
+        Some(Commands::Scan(args)) => !args.add,
+        _ => false,
+    };
+    if supported {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "--json is supported by `list`, `status`, `doctor`, and `scan` without `--add`"
+        );
     }
 }

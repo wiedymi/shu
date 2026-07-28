@@ -252,7 +252,7 @@ fn print_uncatalogued(catalog: &Catalog) -> Result<()> {
     }
     let uncatalogued = discover_repos(&root)?
         .into_iter()
-        .filter(|(_, identity)| {
+        .filter(|(_, identity, _)| {
             !catalog
                 .repos
                 .iter()
@@ -261,7 +261,7 @@ fn print_uncatalogued(catalog: &Catalog) -> Result<()> {
         .collect::<Vec<_>>();
     if !uncatalogued.is_empty() {
         println!("\nUNCATALOGUED");
-        for (path, identity) in uncatalogued {
+        for (path, identity, _) in uncatalogued {
             println!("  {:<18} {}", identity, path.display());
         }
     }

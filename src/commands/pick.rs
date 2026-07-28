@@ -33,7 +33,7 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         bail!(
-            "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu add <repository>` to clone one, or run `shu add .` from an existing clone to record it"
+            "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu ensure <repository>` to clone one, or run `shu add .` from an existing clone to record it"
         );
     }
 

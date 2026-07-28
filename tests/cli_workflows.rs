@@ -329,6 +329,69 @@ fn add_and_its_clone_alias_catalogue_and_clone_a_remote_repository() {
 }
 
 #[test]
+fn preserves_an_explicit_ssh_transport_for_later_restores() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let remote = "git@github.com:example-org/api.git";
+    let target = fixture.root.join("github.com/example-org/api");
+
+    fixture
+        .shu_ssh(["--catalog", catalog.to_str().unwrap(), "add", remote])
+        .assert_success();
+    assert!(target.join(".git").is_dir());
+    assert!(
+        fs::read_to_string(&catalog)
+            .unwrap()
+            .contains("remote = \"git@github.com:example-org/api.git\"")
+    );
+
+    fs::remove_dir_all(&target).unwrap();
+    fixture
+        .shu_ssh([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "ensure",
+            "api",
+            "--path-only",
+        ])
+        .assert_success();
+    assert!(target.join(".git").is_dir());
+}
+
+#[test]
+fn rejects_json_for_commands_without_a_stable_json_contract() {
+    let fixture = Fixture::new();
+    let output = fixture.shu(["--json", "ensure", "api"]);
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr).unwrap().contains(
+            "--json is supported by `list`, `status`, `doctor`, and `scan` without `--add`"
+        )
+    );
+}
+
+#[test]
+fn sync_init_refuses_a_remote_that_already_has_branches() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let output = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "sync",
+        "init",
+        IDENTITY,
+    ]);
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("catalog remote already has branches")
+    );
+}
+
+#[test]
 fn scan_skips_hidden_directories_and_groups_each_result() {
     let fixture = Fixture::new();
     let scan_root = fixture.temp.path().join("scan-root");
@@ -984,6 +1047,21 @@ impl Fixture {
             .env("GIT_CONFIG_COUNT", "1")
             .env("GIT_CONFIG_KEY_0", key)
             .env("GIT_CONFIG_VALUE_0", "https://github.com/example-org/")
+            .env("GIT_AUTHOR_NAME", "Shu Test")
+            .env("GIT_AUTHOR_EMAIL", "shu@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Shu Test")
+            .env("GIT_COMMITTER_EMAIL", "shu@example.invalid")
+            .output()
+            .unwrap()
+    }
+
+    fn shu_ssh<const N: usize>(&self, args: [&str; N]) -> Output {
+        let key = format!("url.{}.insteadOf", self.rewrite_prefix);
+        Command::new(env!("CARGO_BIN_EXE_shu"))
+            .args(args)
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", key)
+            .env("GIT_CONFIG_VALUE_0", "git@github.com:example-org/")
             .env("GIT_AUTHOR_NAME", "Shu Test")
             .env("GIT_AUTHOR_EMAIL", "shu@example.invalid")
             .env("GIT_COMMITTER_NAME", "Shu Test")

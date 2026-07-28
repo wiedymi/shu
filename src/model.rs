@@ -51,6 +51,13 @@ pub struct Catalog {
 pub struct Repo {
     /// Normalized `host/namespace/repository` identity.
     pub source: String,
+    /// Optional SSH transport preserved for cloning this repository.
+    ///
+    /// The canonical identity remains in [`Self::source`]. This field exists
+    /// only when the user explicitly added an SSH remote, so later restores do
+    /// not unexpectedly switch an SSH-only repository to HTTPS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote: Option<String>,
     /// User-declared lifecycle state.
     #[serde(default = "default_state")]
     pub state: Lifecycle,
