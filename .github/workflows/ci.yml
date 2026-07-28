@@ -15,13 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-      - run: cargo fmt -- --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
       - run: cargo doc --no-deps --document-private-items
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo build --release
+      - run: cargo build --locked --release
       - name: Test PowerShell installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -32,13 +32,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sh -n tests/docker/e2e.sh
       - run: docker build --tag shu:test .
-      - name: Run Docker end-to-end test
+      - name: Run Docker end-to-end test twice in fresh containers
         run: |
-          docker run --rm --entrypoint /bin/sh \
-            -v "$GITHUB_WORKSPACE/tests/docker:/tests:ro" \
-            -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
-            shu:test -c 'sh /tests/e2e.sh'
+          for attempt in 1 2; do
+            echo "Docker E2E attempt $attempt"
+            docker run --rm --entrypoint /bin/sh \
+              -v "$GITHUB_WORKSPACE/tests/docker:/tests:ro" \
+              -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+              shu:test -c 'sh /tests/e2e.sh'
+          done
+
+  cli-stress:
+    name: CLI stress
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - name: Repeat offline end-to-end suite
+        run: |
+          for attempt in 1 2 3; do
+            echo "CLI stress attempt $attempt"
+            cargo test --locked --test cli_workflows -- --test-threads=1
+          done
 
   release-size:
     name: Release size (${{ matrix.target }})

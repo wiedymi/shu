@@ -24,11 +24,11 @@ pub struct Cli {
         help = "Use a specific catalog file"
     )]
     pub catalog: Option<PathBuf>,
-    /// Emit structured output for scripts and agents.
+    /// Emit structured output for supported read-only commands.
     #[arg(
         long,
         global = true,
-        help = "Emit stable, versioned JSON where supported"
+        help = "Emit stable, versioned JSON for list, status, doctor, or scan"
     )]
     pub json: bool,
     /// Fail instead of displaying a confirmation prompt.
@@ -142,6 +142,9 @@ pub struct NewArgs {
     /// Create the GitHub repository as private; requires --github.
     #[arg(long, requires = "github")]
     pub private: bool,
+    /// Create the GitHub repository as public; private is the safe default.
+    #[arg(long, requires = "github", conflicts_with = "private")]
+    pub public: bool,
 }
 
 /// Arguments for `shu sync`.
@@ -170,6 +173,9 @@ pub struct SyncInitArgs {
     /// Create the GitHub repository as private; requires --github.
     #[arg(long, requires = "github")]
     pub private: bool,
+    /// Create the GitHub repository as public; private is the safe default.
+    #[arg(long, requires = "github", conflicts_with = "private")]
+    pub public: bool,
 }
 
 /// Arguments for `shu edit`.
@@ -202,7 +208,7 @@ pub struct ScanArgs {
 /// Arguments for `shu doctor`.
 #[derive(Args, Default)]
 pub struct DoctorArgs {
-    /// Resolve the remembered catalog source to confirm it is currently reachable.
+    /// Check the remembered catalog checkout and verify its remote is reachable.
     #[arg(long)]
     pub check_source: bool,
     /// Verify that gh is installed and authenticated for `shu new --github`.

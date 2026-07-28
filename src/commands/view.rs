@@ -67,7 +67,7 @@ fn observed_state(catalog: &Catalog, repo: &Repo) -> Result<String> {
             "present".into()
         });
     }
-    let remembered_exists = locations::remembered_paths(repo)?
+    let remembered_exists = locations::remembered_paths(catalog, repo)?
         .iter()
         .any(|path| path.exists());
     let managed = locations::managed_path(catalog, repo)?;
@@ -138,7 +138,7 @@ fn print_repository_status(catalog: &Catalog, repo: &Repo) -> Result<()> {
     println!("  {marker} {:<18} {observed}", repo_name(repo));
 
     if observed == "missing" {
-        for path in locations::remembered_paths(repo)? {
+        for path in locations::remembered_paths(catalog, repo)? {
             println!("    Recorded: {}", path.display());
         }
         let path = locations::managed_path(catalog, repo)?;
@@ -181,10 +181,11 @@ pub fn locations_command(cli: &Cli, args: &LocationsArgs) -> Result<()> {
             path
         };
         let name = catalog::repo_name(&catalog.repos[index]).to_owned();
+        let stored = locations::store_local_path(&catalog, &path)?;
         let is_recorded = catalog.repos[index]
             .paths
             .iter()
-            .any(|known| known == &path.display().to_string());
+            .any(|known| known == &stored);
         let is_managed = path == locations::managed_path(&catalog, &catalog.repos[index])?
             && crate::git::is_repo(&path);
         if !is_recorded && !is_managed {
@@ -195,16 +196,16 @@ pub fn locations_command(cli: &Cli, args: &LocationsArgs) -> Result<()> {
             );
         }
         if !is_recorded {
-            catalog.repos[index].add_path(path.clone());
+            catalog.repos[index].paths.push(stored.clone());
         }
-        catalog.repos[index].primary = Some(path.display().to_string());
+        catalog.repos[index].primary = Some(stored);
         catalog::save(&catalog_path, &catalog)?;
         println!("Preferred clone for {name}: {}", path.display());
     }
 
     let repo = &catalog.repos[index];
     let primary = locations::present_path(&catalog, repo)?;
-    let mut paths = locations::remembered_paths(repo)?;
+    let mut paths = locations::remembered_paths(&catalog, repo)?;
     let managed = locations::managed_path(&catalog, repo)?;
     if crate::git::is_repo(&managed) && !paths.iter().any(|path| path == &managed) {
         paths.push(managed);
@@ -252,7 +253,7 @@ fn print_uncatalogued(catalog: &Catalog) -> Result<()> {
     }
     let uncatalogued = discover_repos(&root)?
         .into_iter()
-        .filter(|(_, identity)| {
+        .filter(|(_, identity, _)| {
             !catalog
                 .repos
                 .iter()
@@ -261,7 +262,7 @@ fn print_uncatalogued(catalog: &Catalog) -> Result<()> {
         .collect::<Vec<_>>();
     if !uncatalogued.is_empty() {
         println!("\nUNCATALOGUED");
-        for (path, identity) in uncatalogued {
+        for (path, identity, _) in uncatalogued {
             println!("  {:<18} {}", identity, path.display());
         }
     }

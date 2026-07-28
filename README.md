@@ -4,48 +4,17 @@
 [![Checks](https://img.shields.io/github/actions/workflow/status/wiedymi/shu/ci.yml?branch=main&style=flat-square&label=checks)](https://github.com/wiedymi/shu/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/wiedymi/shu?style=flat-square)](LICENSE)
 
-**Your simple library of Git repositories.**
+**A small, personal library for your Git repositories.**
 
-Shu keeps one small, readable `shu.toml` catalog of the repositories you care
-about. Put it in Git, restore it on a new computer, and always know where a
-project lives locally.
-
-- Restore your repository collection with one command.
-- Keep old projects as active, parked, reference, or archived—without deleting them.
-- Find a repository quickly with Shu's built-in fuzzy picker.
-- Give scripts and coding agents one reliable command for getting a local path.
-
-## Get started
-
-Create a catalog beside your other personal configuration, then commit it to a
-private repository or Gist:
-
-```sh
-shu --catalog ./shu.toml init
-shu --catalog ./shu.toml add .
-shu --catalog ./shu.toml add github.com/example-org/useful-project --state reference # clones it
-git add shu.toml
-```
-
-On a new machine:
-
-```sh
-shu restore github.com/your-name/your-repository-library
-```
-
-Shu reads the repository's root-level `shu.toml`, puts missing repositories
-under `~/shu` by default, and leaves existing repositories alone. `shu add .`
-adds that current clone to the repository's `paths` list in the same catalog,
-so it remains available to `shu`, `shu path`, and the picker without an
-unnecessary move. If you start with an empty machine, everyday commands create
-an empty local catalog for you.
+Shu remembers the projects you care about, puts new clones in predictable
+places, and lets you jump to them quickly. Its catalog is a readable
+`shu.toml` file—your repositories stay normal Git repositories under your
+control.
 
 ## Install
 
 Download a release for macOS, Windows, or Linux from
-[GitHub Releases](https://github.com/wiedymi/shu/releases).
-
-Once stable releases are public, the simplest installation commands are:
+[GitHub Releases](https://github.com/wiedymi/shu/releases), or install it with:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf \
@@ -56,63 +25,162 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 irm https://github.com/wiedymi/shu/releases/latest/download/shu-installer.ps1 | iex
 ```
 
-Both installers verify the downloaded archive against the release's
-`SHA256SUMS` file. To build Shu directly from source:
+The installers verify the download against the release checksums. To build
+from source instead:
 
 ```sh
 cargo install --git https://github.com/wiedymi/shu
 ```
 
-## Everyday use
+## Start here
+
+Add a project you already have, or clone one you want. Shu creates its local
+catalog automatically and uses `~/shu` as the default library root.
 
 ```sh
-shu                     # Pick a present repository and enter it (after shell setup)
-shu status              # See what is present, missing, or uncatalogued
-shu restore             # Clone catalogued repositories that are missing
-shu doctor              # Check Git, the catalog, and the configured root
-shu add github.com/you/my-project # Add and clone a repository
-shu clone github.com/you/my-project # Alias for `shu add`
-shu locations my-project # Show every known clone and its Git worktrees
-shu edit my-project --state parked --note "Paused until the next release"
-shu add . --migrate     # Move a clean local repository into ~/shu's layout
+# From inside an existing Git repository
+shu add .
+
+# Clone and remember a repository
+shu add github.com/example-org/api
+# `shu clone github.com/example-org/api` means the same thing.
 ```
 
-To make bare `shu` open the picker, install its small shell wrapper once:
+Now find it whenever you need it:
 
 ```sh
-# Use bash, zsh, fish, nushell, or posix as appropriate.
-shu shell init bash
+shu list
+shu path api
+shu pick
+```
+
+`shu path` prints the preferred local checkout. `shu pick` opens the fuzzy
+picker and returns the selected path. The shell integration below makes plain
+`shu` open that picker and change your current directory.
+
+## Everyday commands
+
+| What you want | Command |
+| --- | --- |
+| Add the current checkout without moving it | `shu add .` |
+| Clone a repository into your library | `shu add github.com/you/project` |
+| Create a fresh local repository | `shu new github.com/you/project` |
+| Find and open a project | `shu pick` or plain `shu` after shell setup |
+| Print a project path for a script | `shu path project` |
+| See clones and Git worktrees | `shu locations project` |
+| See what is missing locally | `shu status` |
+| Clone every missing catalogued project | `shu restore` |
+| Discover projects in a directory | `shu scan ~/Development --add` |
+| Check your setup | `shu doctor` |
+
+Repository names can be the full identity (`github.com/you/project`), a unique
+suffix, or a unique name such as `project`.
+
+### Pick and jump
+
+Install the tiny shell wrapper once:
+
+```sh
+# Pick the shell you use: bash, zsh, fish, nushell, or posix.
+shu shell init zsh
 ```
 
 ```powershell
 shu shell init pwsh
 ```
 
-Shu writes only a clearly marked block to the appropriate startup file and
-will replace that block safely when run again. Open a new terminal afterwards:
-a program cannot modify its parent shell's current session. To inspect or
-manage the wrapper yourself, use `shu shell init pwsh --print` or provide an
-explicit target with `shu shell init pwsh --path ./profile.ps1`.
+Open a new terminal afterwards. Then plain `shu` shows the fuzzy picker; choose
+a repository or one of its Git worktrees and your shell changes into it.
+`shu pick` remains useful when you only need the selected path.
 
-The picker offers repositories that are actually present on this machine,
-including every existing clone recorded with `shu add .` and real Git
-worktrees discovered dynamically from those clones. `--migrate` remains the
-explicit option to move a clean clone into Shu's managed root. If `shu status`
-shows a repository as **missing**, restore it with `shu add <repository>` or run
-`shu add .` from the existing clone to record it.
+### Keep repositories organized
 
-For scripts and agents:
+Adding `.` records an existing checkout where it already lives. Adding a remote
+identity clones it below the library root:
 
-```sh
-repo_path="$(shu ensure github.com/example-org/project --path-only)"
+```text
+~/shu/github.com/you/project
 ```
 
-## `shu.toml` reference
+Mark projects for later without moving or deleting anything:
 
-`shu.toml` is Shu's only user-facing configuration file. It describes the
-repositories you care about and, when you add existing clones, the local paths
-where you keep them. There is one `[[repos]]` entry for each repository
-identity.
+```sh
+shu edit project --state parked --note "Waiting for the next release"
+shu edit project --state reference
+shu archive project
+```
+
+The available states are `active`, `parked`, `reference`, and `archived`.
+Shu never deletes repositories or resets working trees.
+
+If you want to bring a clean existing checkout into Shu's managed layout,
+preview the move first:
+
+```sh
+shu add . --migrate --dry-run
+shu add . --migrate
+```
+
+## Create a repository
+
+Create a new local Git repository in Shu's library:
+
+```sh
+shu new github.com/you/new-project --tag experiment
+```
+
+To also create a private GitHub repository and set it as `origin`, use the
+authenticated GitHub CLI:
+
+```sh
+shu doctor --check-github
+shu new github.com/you/private-project --github
+```
+
+Pass `--public` only when you explicitly want a public repository. If GitHub
+CLI is unavailable, create the remote yourself and add it with Git as usual.
+
+## Use the same library on another machine
+
+Sync is optional. It stores your catalog in a normal private Git repository,
+using the credentials you already use for Git. Shu does not store tokens or
+create extra state files.
+
+Create a private catalog repository automatically with GitHub CLI:
+
+```sh
+shu sync init github.com/you/shu-catalog --github
+```
+
+Or create an empty private repository with any Git host first, then point Shu
+at it:
+
+```sh
+shu sync init git@github.com:you/shu-catalog.git
+```
+
+After you change your catalog, publish it:
+
+```sh
+shu sync
+```
+
+On another machine, restore the catalog and its missing projects:
+
+```sh
+shu restore git@github.com:you/shu-catalog.git
+```
+
+The synced catalog contains repository identities, Git remotes, states, tags,
+and notes. Your local root and local checkout paths stay private to each
+machine, so restore places managed projects below that machine's root. The
+catalog repository itself is a normal checkout below the root, but it is not
+shown in Shu's repository list or picker.
+
+## `shu.toml`
+
+`shu.toml` is the only configuration file Shu creates. You can edit it by hand
+or use the commands above.
 
 ```toml
 version = 1
@@ -123,178 +191,33 @@ source = "github.com/your-name/project"
 state = "active"
 tags = ["personal", "rust"]
 note = "A project I work on regularly"
-paths = [
-  "C:/Users/you/Projects/project",
-  "C:/Users/you/shu/github.com/your-name/project",
-]
-primary = "C:/Users/you/Projects/project"
-```
+paths = ["github.com/your-name/project"]
+primary = "github.com/your-name/project"
 
-| Field | Meaning | Default |
-| --- | --- | --- |
-| `version` | Catalog format version. | Required; currently `1`. |
-| `root` | Canonical destination used by `shu add`, `shu clone`, and `shu restore` for a repository that has no usable local clone. | `~/shu` |
-| `repos[].source` | Repository identity: `host/namespace/repository`. HTTPS and SSH URLs are normalized to this form by `shu add`. | Required. |
-| `repos[].state` | Your lifecycle label: `active`, `parked`, `reference`, or `archived`. It is never inferred from age. | `active` |
-| `repos[].tags` | Optional labels for filtering and grouping. | `[]` |
-| `repos[].note` | Optional human context about why the repository is kept. | Absent |
-| `repos[].paths` | Every known full clone of the repository. `shu add .` appends the current clone without moving it. | `[]` |
-| `repos[].primary` | The clone Shu prefers for `shu path` and the first picker result. | The first valid path, then the managed path. |
-
-`paths` holds normal full-clone roots. A path that does not exist on the
-current computer is ignored safely, which makes one catalog usable across your
-machines. Git worktrees are deliberately not stored: Shu discovers them from
-each valid clone every time it opens the picker or runs `shu locations`.
-
-`root` does not move anything by itself. It only determines the canonical
-managed destination:
-
-```text
-<root>/<host>/<namespace>/<repository>
-```
-
-For example, `github.com/your-name/project` with the default root belongs at:
-
-```text
-~/shu/github.com/your-name/project
-```
-
-Choose the preferred clone explicitly with:
-
-```sh
-shu locations project --primary /path/to/project
-```
-
-Inspect all known clones and dynamically discovered worktrees with:
-
-```sh
-shu locations project
-```
-
-To register another existing full clone, run this from inside it:
-
-```sh
-shu add .
-```
-
-The catalog is deliberately data-only: no secrets, setup hooks, or arbitrary
-commands. Shu never deletes repositories, resets a working tree, or overwrites
-a conflicting directory.
-
-When `shu status` says a repository is **missing**, Shu cannot find a recorded
-local clone or its canonical destination. It prints the expected path and the
-exact `shu add <repository>` command to create it. To update catalog
-metadata without changing repository files:
-
-```sh
-shu edit my-project --state reference --note "Useful implementation reference"
-shu edit my-project --clear-note
-```
-
-To bring an existing clean clone into Shu's managed layout, preview the move
-first, then confirm it:
-
-```sh
-shu add . --migrate --dry-run
-shu add . --migrate
-```
-
-Migration only moves valid, clean working trees. Shu refuses repositories with
-staged, unstaged, or untracked changes; linked Git worktrees; an existing
-canonical destination; or a destination on another filesystem. It never copies
-then deletes a repository as a fallback.
-
-## Creating repositories
-
-Create an empty local Git repository directly in Shu's managed layout:
-
-```sh
-shu new github.com/you/new-project --tag experiment
-```
-
-This creates and catalogues the local repository on its `main` branch. It does
-not create a hosted repository, commit, or push. To create the matching GitHub
-repository explicitly, use the authenticated GitHub CLI:
-
-```sh
-shu doctor --check-github
-shu new github.com/you/private-project --github --private
-```
-
-`--github` is optional and provider-specific. If it is unavailable or lacks
-permission, Shu leaves the catalog unchanged and explains how to create the
-remote manually.
-
-## Updating
-
-```sh
-shu update              # Refresh the configured Git catalog and restore missing repositories
-shu upgrade             # Install the latest verified Shu release
-```
-
-## Syncing a private catalog
-
-Shu does not create repositories or manage credentials. Create a private Git
-repository with your preferred provider, or let Shu create one through `gh`:
-
-```sh
-shu sync init github.com/you/shu-catalog --github --private
-```
-
-This creates a dedicated catalog checkout, commits the active catalog, pushes
-`main`, and activates sync. The catalog checkout is intentionally not added to
-`[[repos]]`. Before using GitHub creation, verify the installed CLI:
-
-```sh
-shu doctor --check-github
-```
-
-To use an already-created remote, run `shu sync init <remote>` instead. In
-both cases Shu writes this configuration into the catalog:
-
-```toml
 [sync]
 remote = "git@github.com:you/shu-catalog.git"
 file = "shu.toml"
 ref = "main"
 ```
 
-Then make it active once:
+Paths below `root` are stored relative to it. A checkout at
+`github.com/your-name/project` therefore resolves to
+`~/shu/github.com/your-name/project` with the default root. Paths outside the
+root are absolute and stay on the machine where they were recorded. Git
+worktrees are discovered when needed rather than stored in the catalog.
+
+For scripts and coding agents, use `ensure` when a checkout may be missing:
 
 ```sh
-shu restore git@github.com:you/shu-catalog.git
+repo_path="$(shu ensure github.com/example-org/project --path-only)"
 ```
 
-After changing the local catalog, publish it with:
-
-```sh
-shu sync
-```
-
-Shu keeps that catalog as a normal checkout at the canonical path below your
-configured repository root (for example `~/shu/github.com/you/shu-catalog`).
-It is not added to `[[repos]]`, so it never appears in your repository picker.
-
-`sync` uses your existing Git credentials. It refuses a dirty checkout or a
-remote change that has not been restored first; run `shu restore` again to
-review the remote version. It never stores credentials, force-pushes, resets,
-or merges changes.
-
-If a clone or release download is unavailable, Shu reports what failed and
-suggests checking the path, network connection, or Git access. It does not try
-to manage your credentials.
-
-## Help
+## More help
 
 ```sh
 shu --help
+shu <command> --help
 shu doctor --check-source
-```
-
-For implementation documentation:
-
-```sh
-cargo doc --no-deps --document-private-items --open
 ```
 
 ## Security

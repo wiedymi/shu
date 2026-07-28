@@ -273,10 +273,79 @@ fn initializes_and_publishes_a_dedicated_catalog_checkout() {
     assert!(active.contains("[sync]"));
     assert!(active.contains("remote = \"https://github.com/example-org/catalog.git\""));
     let remote_catalog = run_git_output(&fixture.catalog_remote, ["show", "main:shu.toml"]);
-    assert_eq!(remote_catalog, active);
+    assert!(!remote_catalog.contains("root ="));
+    assert!(!remote_catalog.contains("paths ="));
+    assert!(!remote_catalog.contains("primary ="));
+    assert!(remote_catalog.contains("[sync]"));
     assert!(
         !active.contains("source = \"github.com/example-org/catalog\""),
         "the catalog repository must not become a picker entry"
+    );
+}
+
+#[test]
+fn sync_keeps_external_locations_local_and_restores_managed_paths_per_machine() {
+    let fixture = Fixture::new();
+    let first = fixture.write_empty_catalog("first.toml");
+    let remote = "https://github.com/example-org/catalog.git";
+
+    fixture
+        .shu(["--catalog", first.to_str().unwrap(), "sync", "init", remote])
+        .assert_success();
+    fixture
+        .shu([
+            "--catalog",
+            first.to_str().unwrap(),
+            "add",
+            fixture.seed.to_str().unwrap(),
+        ])
+        .assert_success();
+    let first_content = fs::read_to_string(&first)
+        .unwrap()
+        .replace("remote = \"git@github.com:example-org/api.git\"\n", "");
+    fs::write(&first, &first_content).unwrap();
+    fixture
+        .shu(["--catalog", first.to_str().unwrap(), "sync"])
+        .assert_success();
+
+    let first_catalog: toml::Value = toml::from_str(&first_content).unwrap();
+    assert_same_path(
+        first_catalog["repos"][0]["paths"][0].as_str().unwrap(),
+        &fixture.seed,
+    );
+    let synced = run_git_output(&fixture.catalog_remote, ["show", "main:shu.toml"]);
+    assert!(synced.contains("source = \"github.com/example-org/api\""));
+    assert!(!synced.contains("root ="));
+    assert!(!synced.contains("paths ="));
+
+    let second_root = fixture.temp.path().join("second-library");
+    let second = fixture.temp.path().join("second.toml");
+    fs::write(
+        &second,
+        format!(
+            "version = 1\nroot = \"{}\"\n",
+            second_root.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    fixture
+        .shu([
+            "--catalog",
+            second.to_str().unwrap(),
+            "--yes",
+            "restore",
+            remote,
+        ])
+        .assert_success();
+
+    let expected = second_root.join("github.com/example-org/api");
+    assert!(expected.join(".git").is_dir());
+    let second_content = fs::read_to_string(&second).unwrap();
+    let second_catalog: toml::Value = toml::from_str(&second_content).unwrap();
+    assert_same_path(second_catalog["root"].as_str().unwrap(), &second_root);
+    assert_eq!(
+        second_catalog["repos"][0]["paths"].as_array().unwrap()[0].as_str(),
+        Some("github.com/example-org/api")
     );
 }
 
@@ -325,6 +394,69 @@ fn add_and_its_clone_alias_catalogue_and_clone_a_remote_repository() {
         String::from_utf8(cloned.stdout)
             .unwrap()
             .contains("Already catalogued")
+    );
+}
+
+#[test]
+fn preserves_an_explicit_ssh_transport_for_later_restores() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let remote = "git@github.com:example-org/api.git";
+    let target = fixture.root.join("github.com/example-org/api");
+
+    fixture
+        .shu_ssh(["--catalog", catalog.to_str().unwrap(), "add", remote])
+        .assert_success();
+    assert!(target.join(".git").is_dir());
+    assert!(
+        fs::read_to_string(&catalog)
+            .unwrap()
+            .contains("remote = \"git@github.com:example-org/api.git\"")
+    );
+
+    fs::remove_dir_all(&target).unwrap();
+    fixture
+        .shu_ssh([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "ensure",
+            "api",
+            "--path-only",
+        ])
+        .assert_success();
+    assert!(target.join(".git").is_dir());
+}
+
+#[test]
+fn rejects_json_for_commands_without_a_stable_json_contract() {
+    let fixture = Fixture::new();
+    let output = fixture.shu(["--json", "ensure", "api"]);
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr).unwrap().contains(
+            "--json is supported by `list`, `status`, `doctor`, and `scan` without `--add`"
+        )
+    );
+}
+
+#[test]
+fn sync_init_refuses_a_remote_that_already_has_branches() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+    let output = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "sync",
+        "init",
+        IDENTITY,
+    ]);
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("catalog remote already has branches")
     );
 }
 
@@ -399,6 +531,63 @@ fn scan_skips_hidden_directories_and_groups_each_result() {
     assert!(!output.contains("shallow"));
     assert!(output.contains("github.com/example-org/parent\n  parent"));
     assert!(!output.contains("vendor/api"));
+}
+
+#[test]
+fn restores_and_selects_from_a_large_catalog_deterministically() {
+    const REPOSITORY_COUNT: usize = 32;
+
+    let fixture = Fixture::new();
+    let catalog = fixture.temp.path().join("large-library.toml");
+    let mut content = format!(
+        "version = 1\nroot = \"{}\"\n",
+        fixture.root.to_string_lossy().replace('\\', "/")
+    );
+
+    for index in 0..REPOSITORY_COUNT {
+        let name = format!("stress-{index:02}");
+        let remote = fixture.remote.parent().unwrap().join(format!("{name}.git"));
+        run_git(
+            fixture.temp.path(),
+            ["clone", "--bare", fixture.remote.to_str().unwrap()],
+            Some(&remote),
+        );
+        content.push_str(&format!(
+            "\n[[repos]]\nsource = \"github.com/example-org/{name}\"\nstate = \"active\"\n"
+        ));
+    }
+    fs::write(&catalog, content).unwrap();
+
+    fixture
+        .shu(["--catalog", catalog.to_str().unwrap(), "--yes", "restore"])
+        .assert_success();
+
+    let listed = fixture.shu(["--catalog", catalog.to_str().unwrap(), "--json", "list"]);
+    listed.assert_success();
+    let repositories = serde_json::from_slice::<Value>(&listed.stdout).unwrap()["repositories"]
+        .as_array()
+        .unwrap()
+        .to_owned();
+    assert_eq!(repositories.len(), REPOSITORY_COUNT);
+    assert!(
+        repositories
+            .iter()
+            .all(|repo| repo["observed_state"] == "present")
+    );
+
+    let selected = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "stress-31",
+        "--path-only",
+    ]);
+    selected.assert_success();
+    assert_same_path(
+        String::from_utf8(selected.stdout).unwrap().trim(),
+        &fixture.root.join("github.com/example-org/stress-31"),
+    );
 }
 
 #[test]
@@ -984,6 +1173,21 @@ impl Fixture {
             .env("GIT_CONFIG_COUNT", "1")
             .env("GIT_CONFIG_KEY_0", key)
             .env("GIT_CONFIG_VALUE_0", "https://github.com/example-org/")
+            .env("GIT_AUTHOR_NAME", "Shu Test")
+            .env("GIT_AUTHOR_EMAIL", "shu@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Shu Test")
+            .env("GIT_COMMITTER_EMAIL", "shu@example.invalid")
+            .output()
+            .unwrap()
+    }
+
+    fn shu_ssh<const N: usize>(&self, args: [&str; N]) -> Output {
+        let key = format!("url.{}.insteadOf", self.rewrite_prefix);
+        Command::new(env!("CARGO_BIN_EXE_shu"))
+            .args(args)
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", key)
+            .env("GIT_CONFIG_VALUE_0", "git@github.com:example-org/")
             .env("GIT_AUTHOR_NAME", "Shu Test")
             .env("GIT_AUTHOR_EMAIL", "shu@example.invalid")
             .env("GIT_COMMITTER_NAME", "Shu Test")

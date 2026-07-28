@@ -112,13 +112,16 @@ pub fn git_output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String>
     output(dir, args)
 }
 
-/// Clone an identity into an empty canonical target path using HTTPS transport.
-pub fn clone(identity: &str, target: &Path) -> Result<()> {
+/// Clone a catalog source into an empty canonical target path.
+///
+/// Canonical identities use HTTPS. Explicit SSH remotes are preserved exactly
+/// as supplied so Git can use the user's configured SSH credentials.
+pub fn clone(source: &str, target: &Path) -> Result<()> {
     let parent = target
         .parent()
         .ok_or_else(|| anyhow!("target has no parent"))?;
     fs::create_dir_all(parent)?;
-    let remote = format!("https://{}.git", normalize_identity(identity)?);
+    let remote = clone_url(source)?;
     let output = Command::new("git")
         .args(["clone", "--", &remote])
         .arg(target)
@@ -128,10 +131,63 @@ pub fn clone(identity: &str, target: &Path) -> Result<()> {
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         bail!(
-            "could not clone {identity}. Check your internet connection and Git access to this repository. Git said: {detail}"
+            "could not clone {source}. Check your internet connection and Git access to this repository. Git said: {detail}"
         );
     }
     Ok(())
+}
+
+/// Return the safe Git remote used to clone a catalog entry.
+fn clone_url(source: &str) -> Result<String> {
+    let source = source.trim();
+    if source.starts_with("git@") || source.starts_with("ssh://") {
+        return Ok(source.to_owned());
+    }
+    Ok(format!("https://{}.git", normalize_identity(source)?))
+}
+
+/// Return whether Git has an author identity available for commits.
+pub fn has_author_identity() -> Result<bool> {
+    if std::env::var_os("GIT_AUTHOR_NAME").is_some_and(|value| !value.is_empty())
+        && std::env::var_os("GIT_AUTHOR_EMAIL").is_some_and(|value| !value.is_empty())
+    {
+        return Ok(true);
+    }
+    Ok(git_config_value("user.name")?.is_some() && git_config_value("user.email")?.is_some())
+}
+
+/// Return one effective Git configuration value without requiring a repository.
+fn git_config_value(key: &str) -> Result<Option<String>> {
+    let output = Command::new("git")
+        .args(["config", "--get", key])
+        .output()
+        .with_context(|| "could not run git; ensure Git is installed")?;
+    if output.status.success() {
+        return Ok(Some(String::from_utf8(output.stdout)?.trim().to_owned()));
+    }
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+    bail!(
+        "could not read Git configuration: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )
+}
+
+/// Return whether a remote already has branch heads.
+pub fn remote_has_heads(remote: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .args(["ls-remote", "--heads", remote])
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| "could not run git ls-remote")?;
+    if !output.status.success() {
+        bail!(
+            "could not inspect remote {remote}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(!output.stdout.is_empty())
 }
 
 /// Clone a catalog remote with the user's existing Git credentials.

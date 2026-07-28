@@ -104,7 +104,7 @@ pub fn sync(cli: &Cli, args: &SyncArgs) -> Result<()> {
 
 /// Safely commit and push the active catalog through its persistent Git checkout.
 fn sync_catalog(cli: &Cli) -> Result<()> {
-    let (catalog_file, catalog) = catalog::load(cli)?;
+    let (_, catalog) = catalog::load(cli)?;
     let sync = catalog.sync.clone().ok_or_else(|| {
         anyhow!("no Git catalog is configured; add [sync] to shu.toml before running `shu sync`")
     })?;
@@ -127,7 +127,7 @@ fn sync_catalog(cli: &Cli) -> Result<()> {
             filename.display()
         );
     }
-    let local_content = fs::read_to_string(&catalog_file)?;
+    let local_content = catalog::portable_contents(&catalog)?;
     if fs::read_to_string(&remote_catalog)? == local_content {
         println!("Catalog is already synced.");
         return Ok(());
@@ -167,6 +167,11 @@ fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
     if args.github {
         super::catalog::ensure_github_ready()?;
     }
+    if !git::has_author_identity()? {
+        bail!(
+            "Git author identity is not configured; set user.name and user.email before `shu sync init`"
+        );
+    }
     let sync = Sync {
         remote: remote.clone(),
         file: "shu.toml".into(),
@@ -179,16 +184,21 @@ fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
             checkout.display()
         );
     }
+    if !args.github && git::remote_has_heads(&remote)? {
+        bail!(
+            "catalog remote already has branches; use `shu restore {remote}` to activate it instead"
+        );
+    }
     git::initialize(&checkout)?;
     if args.github {
-        super::catalog::create_github_repository(&checkout, &identity, args.private)?;
+        super::catalog::create_github_repository(&checkout, &identity, !args.public)?;
     } else {
         git::output(&checkout, ["remote", "add", "origin", &remote])?;
     }
     let mut synced_catalog = active_catalog;
     synced_catalog.sync = Some(sync.clone());
     let catalog_file = checkout.join(sync_filename(&sync)?);
-    catalog::save(&catalog_file, &synced_catalog)?;
+    catalog::save_portable(&catalog_file, &synced_catalog)?;
     git::output(&checkout, ["add", "--", "shu.toml"])?;
     git::output(&checkout, ["commit", "-m", "Initialize Shu catalog"])
         .context("could not commit the catalog; configure your Git author identity first")?;
@@ -286,14 +296,16 @@ fn activate_source(cli: &Cli, args: &RestoreArgs, source: &str) -> Result<()> {
     if loaded.version != 1 {
         bail!("unsupported catalog version {}", loaded.version);
     }
-    catalog::save(&catalog_path(cli)?, &loaded)?;
+    let (_, mut active) = catalog::load_or_initialize(cli)?;
+    catalog::merge_portable(&mut active, loaded)?;
+    catalog::save(&catalog_path(cli)?, &active)?;
     eprintln!("Using catalog from {source}");
     Ok(())
 }
 
 /// Clone or fast-forward the normal catalog checkout, then activate its TOML file.
 fn activate_git_source(cli: &Cli, args: &RestoreArgs, remote: &str) -> Result<()> {
-    let (_, active) = catalog::load_or_initialize(cli)?;
+    let (_, mut active) = catalog::load_or_initialize(cli)?;
     let file = args
         .file
         .as_deref()
@@ -333,7 +345,8 @@ fn activate_git_source(cli: &Cli, args: &RestoreArgs, remote: &str) -> Result<()
     {
         bail!("[sync] must match the repository URL, file, and ref passed to `shu restore`");
     }
-    catalog::save(&catalog_path(cli)?, &loaded)?;
+    catalog::merge_portable(&mut active, loaded)?;
+    catalog::save(&catalog_path(cli)?, &active)?;
     eprintln!("Using catalog from {remote}");
     Ok(())
 }
@@ -387,20 +400,25 @@ pub(crate) fn materialize(catalog: &mut Catalog, index: usize) -> Result<(PathBu
         );
     } else {
         eprintln!("↓ cloning {}", repo.source);
-        git::clone(&repo.source, &target)?;
+        let source = repo.remote.as_deref().unwrap_or(&repo.source);
+        git::clone(source, &target)?;
         let target = absolute(&target)?;
-        remember_new_clone(&mut catalog.repos[index], &target);
+        remember_new_clone(catalog, index, &target)?;
         Ok((target, true))
     }
 }
 
 /// Add a just-created canonical clone to the one catalog file and prefer it if needed.
-fn remember_new_clone(repo: &mut crate::model::Repo, path: &std::path::Path) {
-    let replace_primary = repo
-        .primary_path()
+fn remember_new_clone(catalog: &mut Catalog, index: usize, path: &std::path::Path) -> Result<()> {
+    let replace_primary = locations::primary_path(catalog, &catalog.repos[index])?
         .is_none_or(|primary| !git::is_repo(&primary));
-    repo.add_path(path.to_path_buf());
-    if replace_primary {
-        repo.primary = Some(path.display().to_string());
+    let stored = locations::store_local_path(catalog, path)?;
+    let repo = &mut catalog.repos[index];
+    if !repo.paths.iter().any(|known| known == &stored) {
+        repo.paths.push(stored.clone());
     }
+    if replace_primary {
+        repo.primary = Some(stored);
+    }
+    Ok(())
 }

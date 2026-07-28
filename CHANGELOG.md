@@ -7,6 +7,46 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Rewrite the README around the everyday flow: add or clone a repository, find
+  it, create one, and optionally sync the library to another machine.
+- Strengthen cross-platform validation with large-catalog restore and picker
+  coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
+  assertions.
+
+## [0.1.15] - 2026-07-28
+
+### Changed
+
+- Catalog sync now publishes only portable repository metadata while preserving
+  each machine's root, local clone paths, and preferred clone in its active
+  `shu.toml`.
+- Managed clone paths are recorded relative to the configured root, avoiding
+  usernames and absolute managed-library paths in local catalog entries.
+- Restoring a synced catalog merges portable metadata by repository identity,
+  then materializes missing repositories below the receiving machine's root.
+- Docker E2E installer coverage now selects the running Linux architecture.
+
+## [0.1.14] - 2026-07-28
+
+### Added
+
+- `shu sync init` now checks Git author configuration before creating a remote
+  and refuses already-populated catalog remotes with an activation hint.
+- `shu doctor` reports Git author readiness; `--check-source` now verifies that
+  the configured catalog remote and ref are reachable.
+- Explicit SSH remotes added through `shu add`, migration, or scan are retained
+  in `repos[].remote` so `shu ensure` and `shu restore` keep using SSH.
+
+### Changed
+
+- GitHub repositories created by `shu new --github` and `shu sync init --github`
+  are private by default; `--public` makes publication intentional.
+- `--json` now rejects commands without a stable JSON response contract.
+- The setup and sync documentation now describes the supported Git catalog flow,
+  command roles, and read-only Gist behavior.
+
 ## [0.1.13] - 2026-07-28
 
 ### Added
@@ -230,9 +270,16 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/wiedymi/shu/compare/v0.1.14...v0.1.15
+[0.1.14]: https://github.com/wiedymi/shu/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/wiedymi/shu/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/wiedymi/shu/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/wiedymi/shu/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wiedymi/shu/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/wiedymi/shu/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/wiedymi/shu/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/wiedymi/shu/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/wiedymi/shu/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/wiedymi/shu/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/wiedymi/shu/compare/v0.1.3...v0.1.4

@@ -14,6 +14,7 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow, bail};
 use directories::ProjectDirs;
+use serde::Serialize;
 
 /// Return the active catalog path, honoring the global `--catalog` override.
 pub fn catalog_path(cli: &Cli) -> Result<PathBuf> {
@@ -69,6 +70,88 @@ pub fn save(path: &Path, catalog: &Catalog) -> Result<()> {
     fs::create_dir_all(parent)?;
     fs::write(path, toml::to_string_pretty(catalog)?)
         .with_context(|| format!("could not write catalog {}", path.display()))
+}
+
+/// Serialize only the catalog fields that are meaningful on every machine.
+pub fn portable_contents(catalog: &Catalog) -> Result<String> {
+    toml::to_string_pretty(&PortableCatalog::from(catalog)).map_err(Into::into)
+}
+
+/// Save the portable catalog projection to the dedicated sync checkout.
+pub fn save_portable(path: &Path, catalog: &Catalog) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("catalog path has no parent"))?;
+    fs::create_dir_all(parent)?;
+    fs::write(path, portable_contents(catalog)?)
+        .with_context(|| format!("could not write catalog {}", path.display()))
+}
+
+/// Merge remote repository metadata while retaining this machine's locations.
+pub fn merge_portable(local: &mut Catalog, portable: Catalog) -> Result<()> {
+    if portable.version != 1 {
+        bail!("unsupported catalog version {}", portable.version);
+    }
+    let mut local_repos = std::mem::take(&mut local.repos)
+        .into_iter()
+        .map(|repo| Ok((normalize_identity(&repo.source)?, repo)))
+        .collect::<Result<std::collections::HashMap<_, _>>>()?;
+    local.repos = portable
+        .repos
+        .into_iter()
+        .map(|mut repo| {
+            if let Some(previous) = local_repos.remove(&normalize_identity(&repo.source)?) {
+                repo.paths = previous.paths;
+                repo.primary = previous.primary;
+            }
+            Ok(repo)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    local.sync = portable.sync;
+    Ok(())
+}
+
+/// The schema written to the synced Git catalog.
+#[derive(Serialize)]
+struct PortableCatalog<'a> {
+    version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sync: Option<&'a crate::model::Sync>,
+    repos: Vec<PortableRepo<'a>>,
+}
+
+impl<'a> From<&'a Catalog> for PortableCatalog<'a> {
+    fn from(catalog: &'a Catalog) -> Self {
+        Self {
+            version: catalog.version,
+            sync: catalog.sync.as_ref(),
+            repos: catalog.repos.iter().map(PortableRepo::from).collect(),
+        }
+    }
+}
+
+/// Portable metadata for one repository.
+#[derive(Serialize)]
+struct PortableRepo<'a> {
+    source: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remote: Option<&'a String>,
+    state: crate::model::Lifecycle,
+    tags: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<&'a String>,
+}
+
+impl<'a> From<&'a Repo> for PortableRepo<'a> {
+    fn from(repo: &'a Repo) -> Self {
+        Self {
+            source: &repo.source,
+            remote: repo.remote.as_ref(),
+            state: repo.state,
+            tags: &repo.tags,
+            note: repo.note.as_ref(),
+        }
+    }
 }
 
 /// Resolve `.` or a local repository path to its origin remote; pass other values through.
@@ -170,6 +253,7 @@ mod tests {
             repos: vec![
                 Repo {
                     source: "github.com/acme/widgets".into(),
+                    remote: None,
                     state: Lifecycle::Active,
                     tags: vec![],
                     note: None,
@@ -178,6 +262,7 @@ mod tests {
                 },
                 Repo {
                     source: "github.com/acme/api".into(),
+                    remote: None,
                     state: Lifecycle::Parked,
                     tags: vec![],
                     note: None,

@@ -16,11 +16,11 @@ use crate::{
 /// Check the local Shu setup and report actionable failures.
 ///
 /// The default checks never access the network or modify repositories. Passing
-/// `--check-source` also resolves the remembered catalog source; Git-backed
-/// sources may refresh Shu's private catalog cache while doing so.
+/// `--check-source` also verifies that the remembered Git source is reachable.
 pub fn doctor(cli: &Cli, args: &DoctorArgs) -> Result<()> {
     let mut checks = Vec::new();
     checks.push(check_git());
+    checks.push(check_git_author()?);
 
     let path = catalog::catalog_path(cli)?;
     let loaded = catalog::load(cli);
@@ -153,6 +153,18 @@ fn check_git() -> Check {
     }
 }
 
+/// Confirm that Git can create the commits required by catalog sync.
+fn check_git_author() -> Result<Check> {
+    if git::has_author_identity()? {
+        Ok(Check::pass("Git author", "configured for catalog commits"))
+    } else {
+        Ok(Check::fail(
+            "Git author",
+            "missing user.name or user.email; configure both before `shu sync init`",
+        ))
+    }
+}
+
 /// Confirm that the catalog's root, or its nearest existing parent, is writable.
 fn check_root(catalog: &Catalog) -> Result<Check> {
     let root = root_path(catalog)?;
@@ -196,7 +208,7 @@ fn check_sync(catalog: Option<&Catalog>, check_source: bool) -> Result<Check> {
     check_sync_checkout(catalog.expect("sync has a catalog"), sync)
 }
 
-/// Confirm that the configured persistent checkout is ready without fetching.
+/// Confirm that the configured persistent checkout is clean and its remote is reachable.
 fn check_sync_checkout(catalog: &Catalog, sync: &Sync) -> Result<Check> {
     let checkout = root_path(catalog)?.join(crate::identity::normalize_identity(&sync.remote)?);
     if !git::is_repo(&checkout) {
@@ -215,9 +227,18 @@ fn check_sync_checkout(catalog: &Catalog, sync: &Sync) -> Result<Check> {
             format!("checkout has local changes: {}", checkout.display()),
         ));
     }
+    if let Err(error) = git::output(
+        &checkout,
+        ["ls-remote", "--exit-code", "origin", &sync.r#ref],
+    ) {
+        return Ok(Check::fail(
+            "catalog source",
+            format!("remote is not reachable on {}: {error}", sync.r#ref),
+        ));
+    }
     Ok(Check::pass(
         "catalog source",
-        format!("ready: {}", checkout.display()),
+        format!("reachable and clean: {}", checkout.display()),
     ))
 }
 
