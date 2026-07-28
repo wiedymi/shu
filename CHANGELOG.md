@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Rewrite the README around the everyday flow: add or clone a repository, find
+  it, create one, and optionally sync the library to another machine.
+- Strengthen cross-platform validation with large-catalog restore and picker
+  coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
+  assertions.
+
 ## [0.1.15] - 2026-07-28
 
 ### Changed
@@ -265,8 +273,13 @@ and releases use [Semantic Versioning](https://semver.org/).
 [Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.15...HEAD
 [0.1.15]: https://github.com/wiedymi/shu/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/wiedymi/shu/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/wiedymi/shu/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/wiedymi/shu/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/wiedymi/shu/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/wiedymi/shu/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/wiedymi/shu/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/wiedymi/shu/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/wiedymi/shu/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/wiedymi/shu/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/wiedymi/shu/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/wiedymi/shu/compare/v0.1.3...v0.1.4

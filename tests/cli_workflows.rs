@@ -308,18 +308,24 @@ fn sync_keeps_external_locations_local_and_restores_managed_paths_per_machine() 
         .shu(["--catalog", first.to_str().unwrap(), "sync"])
         .assert_success();
 
-    assert!(first_content.contains(fixture.seed.to_string_lossy().as_ref()));
+    let first_catalog: toml::Value = toml::from_str(&first_content).unwrap();
+    assert_same_path(
+        first_catalog["repos"][0]["paths"][0].as_str().unwrap(),
+        &fixture.seed,
+    );
     let synced = run_git_output(&fixture.catalog_remote, ["show", "main:shu.toml"]);
     assert!(synced.contains("source = \"github.com/example-org/api\""));
     assert!(!synced.contains("root ="));
-    assert!(!synced.contains(fixture.seed.to_string_lossy().as_ref()));
     assert!(!synced.contains("paths ="));
 
     let second_root = fixture.temp.path().join("second-library");
     let second = fixture.temp.path().join("second.toml");
     fs::write(
         &second,
-        format!("version = 1\nroot = \"{}\"\n", second_root.display()),
+        format!(
+            "version = 1\nroot = \"{}\"\n",
+            second_root.to_string_lossy().replace('\\', "/")
+        ),
     )
     .unwrap();
     fixture
@@ -335,13 +341,12 @@ fn sync_keeps_external_locations_local_and_restores_managed_paths_per_machine() 
     let expected = second_root.join("github.com/example-org/api");
     assert!(expected.join(".git").is_dir());
     let second_content = fs::read_to_string(&second).unwrap();
-    assert!(second_content.contains(&format!("root = \"{}\"", second_root.display())));
     let second_catalog: toml::Value = toml::from_str(&second_content).unwrap();
+    assert_same_path(second_catalog["root"].as_str().unwrap(), &second_root);
     assert_eq!(
         second_catalog["repos"][0]["paths"].as_array().unwrap()[0].as_str(),
         Some("github.com/example-org/api")
     );
-    assert!(!second_content.contains(fixture.seed.to_string_lossy().as_ref()));
 }
 
 #[test]
@@ -526,6 +531,63 @@ fn scan_skips_hidden_directories_and_groups_each_result() {
     assert!(!output.contains("shallow"));
     assert!(output.contains("github.com/example-org/parent\n  parent"));
     assert!(!output.contains("vendor/api"));
+}
+
+#[test]
+fn restores_and_selects_from_a_large_catalog_deterministically() {
+    const REPOSITORY_COUNT: usize = 32;
+
+    let fixture = Fixture::new();
+    let catalog = fixture.temp.path().join("large-library.toml");
+    let mut content = format!(
+        "version = 1\nroot = \"{}\"\n",
+        fixture.root.to_string_lossy().replace('\\', "/")
+    );
+
+    for index in 0..REPOSITORY_COUNT {
+        let name = format!("stress-{index:02}");
+        let remote = fixture.remote.parent().unwrap().join(format!("{name}.git"));
+        run_git(
+            fixture.temp.path(),
+            ["clone", "--bare", fixture.remote.to_str().unwrap()],
+            Some(&remote),
+        );
+        content.push_str(&format!(
+            "\n[[repos]]\nsource = \"github.com/example-org/{name}\"\nstate = \"active\"\n"
+        ));
+    }
+    fs::write(&catalog, content).unwrap();
+
+    fixture
+        .shu(["--catalog", catalog.to_str().unwrap(), "--yes", "restore"])
+        .assert_success();
+
+    let listed = fixture.shu(["--catalog", catalog.to_str().unwrap(), "--json", "list"]);
+    listed.assert_success();
+    let repositories = serde_json::from_slice::<Value>(&listed.stdout).unwrap()["repositories"]
+        .as_array()
+        .unwrap()
+        .to_owned();
+    assert_eq!(repositories.len(), REPOSITORY_COUNT);
+    assert!(
+        repositories
+            .iter()
+            .all(|repo| repo["observed_state"] == "present")
+    );
+
+    let selected = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "stress-31",
+        "--path-only",
+    ]);
+    selected.assert_success();
+    assert_same_path(
+        String::from_utf8(selected.stdout).unwrap().trim(),
+        &fixture.root.join("github.com/example-org/stress-31"),
+    );
 }
 
 #[test]

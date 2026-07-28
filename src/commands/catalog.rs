@@ -630,7 +630,7 @@ pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String, Option
             found.push((entry.path().to_path_buf(), identity, ssh_transport(&remote)));
         }
     }
-    found.sort_by(|left, right| left.1.cmp(&right.1));
+    found.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
     Ok(found)
 }
 

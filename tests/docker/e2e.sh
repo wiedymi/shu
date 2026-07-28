@@ -48,6 +48,23 @@ shu --catalog "$workspace/shu.toml" locations api --primary "$workspace/seed"
 test "$(shu --catalog "$workspace/shu.toml" ensure api --path-only)" = "$workspace/seed"
 test "$(shu --catalog "$workspace/shu.toml" pick --filter api --path-only)" = "$workspace/seed"
 
+# A larger catalog exercises repeated clone, catalog, list, and picker paths
+# in the same clean container. Each identity has its own local bare remote so
+# the normal Git URL rewrite and clone code are used for every repository.
+stress_catalog="$workspace/stress.toml"
+printf 'version = 1\nroot = "%s/stress-library"\n' "$workspace" > "$stress_catalog"
+index=0
+while [ "$index" -lt 16 ]; do
+    name="stress-$index"
+    git clone --bare "$workspace/remotes/api.git" "$workspace/remotes/$name.git" >/dev/null
+    printf '\n[[repos]]\nsource = "github.com/example-org/%s"\nstate = "active"\n' "$name" >> "$stress_catalog"
+    index=$((index + 1))
+done
+shu --catalog "$stress_catalog" --yes restore
+test "$(shu --catalog "$stress_catalog" --json list | grep -c '"observed_state": "present"')" = 16
+test "$(shu --catalog "$stress_catalog" pick --filter stress-15 --path-only)" = \
+  "$workspace/stress-library/github.com/example-org/stress-15"
+
 # Sync publishes repository metadata only. Root-relative managed paths and
 # arbitrary external clone paths remain local to this machine.
 GIT_AUTHOR_NAME='Shu Test' GIT_AUTHOR_EMAIL='shu@example.invalid' \
