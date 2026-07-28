@@ -13,7 +13,7 @@ use crate::model::Lifecycle;
     version,
     about = "A tiny, declarative, agent-friendly repository library",
     long_about = "Shu keeps one readable catalog of Git repositories, restores missing clones into predictable paths, and lets people and agents resolve repositories reliably.",
-    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu clone github.com/example-org/api\n  shu add . --migrate --dry-run\n  shu locations api\n  shu restore github.com/your-account/repository-library\n  shu path api"
+    after_help = "Examples:\n  shu init\n  shu add github.com/example-org/api --tag backend\n  shu clone github.com/example-org/api\n  shu new github.com/example-org/service\n  shu new github.com/example-org/private-service --github --private\n  shu add . --migrate --dry-run\n  shu locations api\n  shu restore github.com/your-account/repository-library\n  shu path api"
 )]
 pub struct Cli {
     /// Use a specific catalog rather than the active catalog.
@@ -54,6 +54,8 @@ pub enum Commands {
     /// Add a repository to the catalog, cloning remote identities when needed.
     #[command(visible_alias = "clone")]
     Add(AddArgs),
+    /// Create a new local Git repository in Shu's managed library.
+    New(NewArgs),
     /// Change repository metadata such as its lifecycle state or note.
     Edit(EditArgs),
     /// Discover Git repositories below a directory.
@@ -64,8 +66,8 @@ pub enum Commands {
     Status(FilterArgs),
     /// Load a catalog source if provided, then clone missing repositories.
     Restore(RestoreArgs),
-    /// Push catalog changes through the Git checkout configured in shu.toml.
-    Sync,
+    /// Initialize or push the catalog Git checkout configured in shu.toml.
+    Sync(SyncArgs),
     /// Refresh the configured Git catalog and restore any newly missing repositories.
     #[command(
         after_help = "To edit a repository's metadata, use `shu edit <repository> --state <state>` or `shu edit <repository> --note <text>`."
@@ -119,6 +121,57 @@ pub struct AddArgs {
     pub dry_run: bool,
 }
 
+/// Arguments for `shu new`.
+#[derive(Args)]
+pub struct NewArgs {
+    /// Full repository identity, such as github.com/account/project.
+    #[arg(value_name = "REPOSITORY")]
+    pub source: String,
+    /// Lifecycle state to record in the catalog.
+    #[arg(long, value_enum, default_value_t = Lifecycle::Active)]
+    pub state: Lifecycle,
+    /// A repeatable label used for filtering and grouping.
+    #[arg(long)]
+    pub tag: Vec<String>,
+    /// Optional human-readable context for the repository.
+    #[arg(long)]
+    pub note: Option<String>,
+    /// Create the matching GitHub repository through the authenticated gh CLI.
+    #[arg(long)]
+    pub github: bool,
+    /// Create the GitHub repository as private; requires --github.
+    #[arg(long, requires = "github")]
+    pub private: bool,
+}
+
+/// Arguments for `shu sync`.
+#[derive(Args, Default)]
+pub struct SyncArgs {
+    #[command(subcommand)]
+    pub command: Option<SyncCommand>,
+}
+
+/// One explicit sync workflow.
+#[derive(Subcommand)]
+pub enum SyncCommand {
+    /// Create, publish, and activate a dedicated catalog repository.
+    Init(SyncInitArgs),
+}
+
+/// Arguments for `shu sync init`.
+#[derive(Args)]
+pub struct SyncInitArgs {
+    /// Git remote or full repository identity for the catalog repository.
+    #[arg(value_name = "REPOSITORY")]
+    pub source: String,
+    /// Create the matching GitHub repository through the authenticated gh CLI.
+    #[arg(long)]
+    pub github: bool,
+    /// Create the GitHub repository as private; requires --github.
+    #[arg(long, requires = "github")]
+    pub private: bool,
+}
+
 /// Arguments for `shu edit`.
 #[derive(Args)]
 pub struct EditArgs {
@@ -152,6 +205,9 @@ pub struct DoctorArgs {
     /// Resolve the remembered catalog source to confirm it is currently reachable.
     #[arg(long)]
     pub check_source: bool,
+    /// Verify that gh is installed and authenticated for `shu new --github`.
+    #[arg(long)]
+    pub check_github: bool,
 }
 
 /// Shared tag and lifecycle filters.

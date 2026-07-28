@@ -204,6 +204,27 @@ staged, unstaged, or untracked changes; linked Git worktrees; an existing
 canonical destination; or a destination on another filesystem. It never copies
 then deletes a repository as a fallback.
 
+## Creating repositories
+
+Create an empty local Git repository directly in Shu's managed layout:
+
+```sh
+shu new github.com/you/new-project --tag experiment
+```
+
+This creates and catalogues the local repository on its `main` branch. It does
+not create a hosted repository, commit, or push. To create the matching GitHub
+repository explicitly, use the authenticated GitHub CLI:
+
+```sh
+shu doctor --check-github
+shu new github.com/you/private-project --github --private
+```
+
+`--github` is optional and provider-specific. If it is unavailable or lacks
+permission, Shu leaves the catalog unchanged and explains how to create the
+remote manually.
+
 ## Updating
 
 ```sh
@@ -214,8 +235,22 @@ shu upgrade             # Install the latest verified Shu release
 ## Syncing a private catalog
 
 Shu does not create repositories or manage credentials. Create a private Git
-repository with your preferred provider and commit a `shu.toml` that names the
-same repository:
+repository with your preferred provider, or let Shu create one through `gh`:
+
+```sh
+shu sync init github.com/you/shu-catalog --github --private
+```
+
+This creates a dedicated catalog checkout, commits the active catalog, pushes
+`main`, and activates sync. The catalog checkout is intentionally not added to
+`[[repos]]`. Before using GitHub creation, verify the installed CLI:
+
+```sh
+shu doctor --check-github
+```
+
+To use an already-created remote, run `shu sync init <remote>` instead. In
+both cases Shu writes this configuration into the catalog:
 
 ```toml
 [sync]

@@ -42,11 +42,39 @@ pub fn doctor(cli: &Cli, args: &DoctorArgs) -> Result<()> {
     }
 
     checks.push(check_sync(catalog.as_ref(), args.check_source)?);
+    checks.push(check_github(args.check_github));
     render(cli, &checks)?;
     if checks.iter().any(|check| check.status == CheckStatus::Fail) {
         bail!("Shu setup has failing checks")
     }
     Ok(())
+}
+
+/// Verify optional GitHub CLI readiness only when explicitly requested.
+fn check_github(check_github: bool) -> Check {
+    if !check_github {
+        return Check::skip(
+            "GitHub CLI",
+            "not checked; run `shu doctor --check-github` before `shu new --github`",
+        );
+    }
+    match Command::new("gh").args(["auth", "status"]).output() {
+        Ok(output) if output.status.success() => Check::pass(
+            "GitHub CLI",
+            "installed and authenticated for `shu new --github`",
+        ),
+        Ok(output) => Check::fail(
+            "GitHub CLI",
+            format!(
+                "not authenticated: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        ),
+        Err(_) => Check::fail(
+            "GitHub CLI",
+            "gh is not installed; install it or create remotes manually",
+        ),
+    }
 }
 
 /// One named diagnostic result emitted by [`doctor`].

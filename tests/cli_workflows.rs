@@ -59,6 +59,37 @@ fn restores_a_catalog_and_exposes_the_repository_to_agents() {
 }
 
 #[test]
+fn creates_and_catalogues_a_local_repository_without_a_remote() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("library.toml");
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "new",
+            "github.com/example-org/new-project",
+            "--tag",
+            "scratch",
+        ])
+        .assert_success();
+
+    let repository = fixture.root.join("github.com/example-org/new-project");
+    assert!(repository.join(".git").is_dir());
+    assert_eq!(
+        run_git_output(&repository, ["branch", "--show-current"]),
+        "main\n"
+    );
+    assert!(
+        git_remote_is_absent(&repository),
+        "local-first creation must not invent an origin remote"
+    );
+    let content = fs::read_to_string(catalog).unwrap();
+    assert!(content.contains("source = \"github.com/example-org/new-project\""));
+    assert!(content.contains("tags = [\"scratch\"]"));
+}
+
+#[test]
 fn restore_continues_after_an_inaccessible_repository_and_explains_the_failure() {
     let fixture = Fixture::new();
     let catalog = fixture.write_catalog_with_inaccessible_repository("library.toml");
@@ -222,6 +253,34 @@ fn restores_and_syncs_a_catalog_through_a_persistent_checkout() {
 }
 
 #[test]
+fn initializes_and_publishes_a_dedicated_catalog_checkout() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_empty_catalog("active.toml");
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "sync",
+            "init",
+            "https://github.com/example-org/catalog.git",
+        ])
+        .assert_success();
+
+    let checkout = fixture.root.join("github.com/example-org/catalog");
+    assert!(checkout.join(".git").is_dir());
+    let active = fs::read_to_string(&catalog).unwrap();
+    assert!(active.contains("[sync]"));
+    assert!(active.contains("remote = \"https://github.com/example-org/catalog.git\""));
+    let remote_catalog = run_git_output(&fixture.catalog_remote, ["show", "main:shu.toml"]);
+    assert_eq!(remote_catalog, active);
+    assert!(
+        !active.contains("source = \"github.com/example-org/catalog\""),
+        "the catalog repository must not become a picker entry"
+    );
+}
+
+#[test]
 fn picks_a_local_repository_without_an_external_fuzzy_finder() {
     let fixture = Fixture::new();
     let catalog = fixture.write_catalog("library.toml");
@@ -276,6 +335,7 @@ fn scan_skips_hidden_directories_and_groups_each_result() {
     let visible = scan_root.join("visible");
     let hidden = scan_root.join(".build").join("checkouts").join("hidden");
     let shallow = scan_root.join("shallow");
+    let parent = scan_root.join("parent");
     fs::create_dir_all(&scan_root).unwrap();
     fs::create_dir_all(hidden.parent().unwrap()).unwrap();
     run_git(
@@ -306,6 +366,30 @@ fn scan_skips_hidden_directories_and_groups_each_result() {
             None,
         );
     }
+    run_git(&scan_root, ["init"], Some(&parent));
+    run_git(
+        &parent,
+        [
+            "remote",
+            "add",
+            "origin",
+            "git@github.com:example-org/parent.git",
+        ],
+        None,
+    );
+    let submodule = Command::new("git")
+        .current_dir(&parent)
+        .args([
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            fixture.remote.to_str().unwrap(),
+            "vendor/api",
+        ])
+        .output()
+        .unwrap();
+    submodule.assert_success();
 
     let scanned = fixture.shu(["scan", scan_root.to_str().unwrap()]);
     scanned.assert_success();
@@ -313,6 +397,8 @@ fn scan_skips_hidden_directories_and_groups_each_result() {
     assert!(output.contains("github.com/example-org/api\n  visible"));
     assert!(!output.contains(".build"));
     assert!(!output.contains("shallow"));
+    assert!(output.contains("github.com/example-org/parent\n  parent"));
+    assert!(!output.contains("vendor/api"));
 }
 
 #[test]
@@ -770,6 +856,7 @@ struct Fixture {
     root: PathBuf,
     seed: PathBuf,
     remote: PathBuf,
+    catalog_remote: PathBuf,
     rewrite_prefix: String,
 }
 
@@ -778,9 +865,11 @@ impl Fixture {
         let temp = TempDir::new().unwrap();
         let remotes = temp.path().join("remotes");
         let remote = remotes.join("api.git");
+        let catalog_remote = remotes.join("catalog.git");
         let seed = temp.path().join("seed");
 
         run_git(temp.path(), ["init", "--bare"], Some(&remote));
+        run_git(temp.path(), ["init", "--bare"], Some(&catalog_remote));
         run_git(temp.path(), ["init"], Some(&seed));
         fs::write(seed.join("README.md"), "fixture\n").unwrap();
         run_git(&seed, ["add", "README.md"], None);
@@ -818,6 +907,7 @@ impl Fixture {
             temp,
             seed,
             remote,
+            catalog_remote,
             rewrite_prefix,
         }
     }
@@ -941,6 +1031,16 @@ fn run_git_output<const N: usize>(working_dir: &Path, args: [&str; N]) -> String
         .unwrap();
     assert!(output.status.success());
     String::from_utf8(output.stdout).unwrap()
+}
+
+fn git_remote_is_absent(working_dir: &Path) -> bool {
+    !Command::new("git")
+        .current_dir(working_dir)
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .unwrap()
+        .status
+        .success()
 }
 
 /// Serve one catalog response so direct-URL resolution is tested without internet access.

@@ -22,6 +22,12 @@ pub fn is_shallow(path: &Path) -> bool {
     output(path, ["rev-parse", "--is-shallow-repository"]).is_ok_and(|value| value == "true")
 }
 
+/// Return whether a working tree is checked out as a submodule of another repository.
+pub fn is_submodule(path: &Path) -> bool {
+    output(path, ["rev-parse", "--show-superproject-working-tree"])
+        .is_ok_and(|value| !value.is_empty())
+}
+
 /// Resolve a local path inside a Git working tree to its top-level directory.
 pub fn worktree_root(path: &Path) -> Result<PathBuf> {
     if !is_repo(path) {
@@ -144,6 +150,23 @@ pub fn clone_remote(remote: &str, target: &Path, git_ref: Option<&str>) -> Resul
     if !output.status.success() {
         bail!(
             "could not clone catalog source: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// Initialize an empty working tree with `main` as its initial branch.
+pub fn initialize(target: &Path) -> Result<()> {
+    let output = Command::new("git")
+        .args(["init", "-b", "main"])
+        .arg(target)
+        .stdin(Stdio::null())
+        .output()
+        .context("could not run git init")?;
+    if !output.status.success() {
+        bail!(
+            "could not initialize Git repository: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }

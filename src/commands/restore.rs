@@ -10,7 +10,10 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     catalog::{self, catalog_path, repo_name},
-    cli::{Cli, EnsureArgs, FilterArgs, RestoreArgs, SelectorArgs, UpdateArgs},
+    cli::{
+        Cli, EnsureArgs, FilterArgs, RestoreArgs, SelectorArgs, SyncArgs, SyncCommand,
+        SyncInitArgs, UpdateArgs,
+    },
     git, locations,
     model::{Catalog, Sync},
     paths::{absolute, repo_path, root_path},
@@ -92,7 +95,15 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
 }
 
 /// Safely commit and push the active catalog through its persistent Git checkout.
-pub fn sync(cli: &Cli) -> Result<()> {
+pub fn sync(cli: &Cli, args: &SyncArgs) -> Result<()> {
+    match &args.command {
+        Some(SyncCommand::Init(args)) => sync_init(cli, args),
+        None => sync_catalog(cli),
+    }
+}
+
+/// Safely commit and push the active catalog through its persistent Git checkout.
+fn sync_catalog(cli: &Cli) -> Result<()> {
     let (catalog_file, catalog) = catalog::load(cli)?;
     let sync = catalog.sync.clone().ok_or_else(|| {
         anyhow!("no Git catalog is configured; add [sync] to shu.toml before running `shu sync`")
@@ -138,6 +149,55 @@ pub fn sync(cli: &Cli) -> Result<()> {
     }
     git::output(&checkout, ["push", "origin", &sync.r#ref])?;
     println!("Synced catalog to {}.", sync.remote);
+    Ok(())
+}
+
+/// Create a dedicated catalog repository without treating it as a user project.
+fn sync_init(cli: &Cli, args: &SyncInitArgs) -> Result<()> {
+    let (active_path, active_catalog) = catalog::load_or_initialize(cli)?;
+    if active_catalog.sync.is_some() {
+        bail!("a Git catalog is already configured; use `shu sync` or `shu update`");
+    }
+    let remote = sources::repository_remote(&args.source)?
+        .ok_or_else(|| anyhow!("`shu sync init` requires a Git remote or repository identity"))?;
+    let identity = crate::identity::normalize_identity(&remote)?;
+    if args.github && !identity.starts_with("github.com/") {
+        bail!("--github requires a github.com/owner/repository identity");
+    }
+    if args.github {
+        super::catalog::ensure_github_ready()?;
+    }
+    let sync = Sync {
+        remote: remote.clone(),
+        file: "shu.toml".into(),
+        r#ref: "main".into(),
+    };
+    let checkout = sync_checkout(&active_catalog, &sync)?;
+    if checkout.exists() {
+        bail!(
+            "catalog checkout already exists: {}. Use `shu restore {remote}` instead",
+            checkout.display()
+        );
+    }
+    git::initialize(&checkout)?;
+    if args.github {
+        super::catalog::create_github_repository(&checkout, &identity, args.private)?;
+    } else {
+        git::output(&checkout, ["remote", "add", "origin", &remote])?;
+    }
+    let mut synced_catalog = active_catalog;
+    synced_catalog.sync = Some(sync.clone());
+    let catalog_file = checkout.join(sync_filename(&sync)?);
+    catalog::save(&catalog_file, &synced_catalog)?;
+    git::output(&checkout, ["add", "--", "shu.toml"])?;
+    git::output(&checkout, ["commit", "-m", "Initialize Shu catalog"])
+        .context("could not commit the catalog; configure your Git author identity first")?;
+    git::output(&checkout, ["push", "-u", "origin", "main"]).context(
+        "could not publish the catalog; confirm the remote exists and Git access is configured",
+    )?;
+    catalog::save(&active_path, &synced_catalog)?;
+    println!("Initialized catalog sync at {remote}.");
+    println!("  Checkout: {}", checkout.display());
     Ok(())
 }
 

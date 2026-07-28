@@ -7,6 +7,24 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-07-28
+
+### Added
+
+- `shu new <repository>` creates and catalogues an empty local Git repository
+  on `main`, without requiring a remote or initial commit.
+- `shu new <github-identity> --github --private` explicitly creates and
+  attaches a private GitHub repository through the user's authenticated `gh`
+  CLI.
+- `shu sync init <repository>` creates, commits, publishes, and activates a
+  dedicated catalog repository without adding it to `[[repos]]` or the picker.
+- `shu doctor --check-github` verifies the optional GitHub CLI integration.
+
+### Changed
+
+- `shu scan` now excludes Git submodules as well as hidden directories and
+  shallow clones, leaving only independently managed repositories.
+
 ## [0.1.12] - 2026-07-28
 
 ### Changed

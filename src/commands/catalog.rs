@@ -13,7 +13,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     catalog::{self, catalog_path},
-    cli::{AddArgs, Cli, EditArgs, ScanArgs, SelectorArgs},
+    cli::{AddArgs, Cli, EditArgs, NewArgs, ScanArgs, SelectorArgs},
     commands::restore,
     git,
     identity::normalize_identity,
@@ -86,6 +86,88 @@ pub fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
     catalog::save(&path, &catalog)?;
     println!("Added {identity}");
     println!("  Local clone: {}", local_path.display());
+    Ok(())
+}
+
+/// Create and catalogue an empty local repository at Shu's canonical path.
+pub fn new(cli: &Cli, args: &NewArgs) -> Result<()> {
+    let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
+    let identity = normalize_identity(&args.source)?;
+    if args.github && !identity.starts_with("github.com/") {
+        bail!("--github requires a github.com/owner/repository identity");
+    }
+    if args.github {
+        ensure_github_ready()?;
+    }
+    if existing_repo(&catalog, &identity).is_some() {
+        bail!("repository is already catalogued: {identity}");
+    }
+    let target = absolute(&root_path(&catalog)?.join(&identity))?;
+    if target.exists() {
+        bail!(
+            "canonical destination already exists: {}. Shu will not overwrite an existing directory",
+            target.display()
+        );
+    }
+    git::initialize(&target)?;
+    if args.github {
+        create_github_repository(&target, &identity, args.private)?;
+    }
+    add_entry_with(
+        &mut catalog,
+        &identity,
+        args.state,
+        &args.tag,
+        args.note.clone(),
+    );
+    remember_path(
+        catalog.repos.last_mut().expect("entry was just added"),
+        &target,
+    )?;
+    catalog::save(&catalog_path, &catalog)?;
+    println!("Created {identity}");
+    println!("  Local repository: {}", target.display());
+    if args.github {
+        println!("  GitHub repository: created");
+    }
+    Ok(())
+}
+
+/// Create the declared GitHub repository and attach it as `origin`.
+pub(crate) fn create_github_repository(target: &Path, identity: &str, private: bool) -> Result<()> {
+    let name = identity
+        .strip_prefix("github.com/")
+        .expect("GitHub identities were validated above");
+    let mut command = std::process::Command::new("gh");
+    command.args(["repo", "create", name]);
+    command.arg(if private { "--private" } else { "--public" });
+    let output = command
+        .args(["--source"])
+        .arg(target)
+        .args(["--remote", "origin"])
+        .output()
+        .with_context(|| "could not run gh; install GitHub CLI or create the remote manually")?;
+    if !output.status.success() {
+        bail!(
+            "could not create GitHub repository {name}: {}. Run `shu doctor --check-github` to verify gh access, or create the remote manually.",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+/// Require an installed, authenticated GitHub CLI before changing the filesystem.
+pub(crate) fn ensure_github_ready() -> Result<()> {
+    let output = std::process::Command::new("gh")
+        .args(["auth", "status"])
+        .output()
+        .with_context(|| "could not run gh; install GitHub CLI or omit --github")?;
+    if !output.status.success() {
+        bail!(
+            "gh is not authenticated: {}. Run `shu doctor --check-github` for details.",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
     Ok(())
 }
 
@@ -321,11 +403,22 @@ fn catalog_repo_mut<'a>(catalog: &'a mut Catalog, identity: &str) -> Result<&'a 
 
 /// Add one catalog entry using the metadata supplied to `shu add`.
 fn add_entry(catalog: &mut Catalog, args: &AddArgs, identity: &str) {
+    add_entry_with(catalog, identity, args.state, &args.tag, args.note.clone());
+}
+
+/// Add a catalog entry from shared repository metadata.
+fn add_entry_with(
+    catalog: &mut Catalog,
+    identity: &str,
+    state: Lifecycle,
+    tags: &[String],
+    note: Option<String>,
+) {
     catalog.repos.push(Repo {
         source: identity.to_owned(),
-        state: args.state,
-        tags: catalog::unique(args.tag.clone()),
-        note: args.note.clone(),
+        state,
+        tags: catalog::unique(tags.to_vec()),
+        note,
         paths: vec![],
         primary: None,
     });
@@ -478,6 +571,7 @@ pub(super) fn discover_repos(root: &Path) -> Result<Vec<(PathBuf, String)>> {
         if !entry.file_type().is_dir()
             || !entry.path().join(".git").exists()
             || git::is_shallow(entry.path())
+            || git::is_submodule(entry.path())
         {
             continue;
         }
