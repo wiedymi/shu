@@ -8,6 +8,9 @@ use ureq::{
     tls::{RootCerts, TlsConfig},
 };
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use ureq::tls::TlsProvider;
+
 const USER_AGENT: &str = concat!("shu/", env!("CARGO_PKG_VERSION"));
 
 /// Create Shu's HTTP client with the operating system's certificate verifier.
@@ -16,13 +19,12 @@ const USER_AGENT: &str = concat!("shu/", env!("CARGO_PKG_VERSION"));
 /// verifier respects the user's current trust store rather than embedding a
 /// static root bundle in every Shu binary.
 pub fn agent() -> Agent {
+    let tls_config = TlsConfig::builder().root_certs(RootCerts::PlatformVerifier);
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let tls_config = tls_config.provider(TlsProvider::NativeTls);
     Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
-        .tls_config(
-            TlsConfig::builder()
-                .root_certs(RootCerts::PlatformVerifier)
-                .build(),
-        )
+        .tls_config(tls_config.build())
         .build()
         .new_agent()
 }
