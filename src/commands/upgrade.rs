@@ -11,6 +11,7 @@ use std::process::Command;
 
 use crate::{cli::UpgradeArgs, hash::sha256_hex, http, ui};
 use anyhow::{Context, Result, anyhow, bail};
+use serde::Deserialize;
 
 const RELEASE_REPOSITORY: &str = "wiedymi/shu";
 const PROGRESS_INTERVAL_BYTES: u64 = 256 * 1024;
@@ -25,17 +26,21 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     let target = release_target()?;
     let current = env::current_exe().context("could not determine Shu executable path")?;
     let asset = format!("shu-{target}{}", executable_extension());
-    let base = release_base(args.version.as_deref());
+    let client = http::agent();
+    let version = release_version(&client, args.version.as_deref())?;
+    let base = release_base(&version);
     ui::heading("Upgrade");
     ui::detail("platform", target);
-    ui::detail("release", args.version.as_deref().unwrap_or("latest"));
-    let client = http::agent();
-    ui::working("Downloading SHA256SUMS");
+    ui::detail(
+        "version",
+        format!("{} → {version}", env!("CARGO_PKG_VERSION")),
+    );
+    ui::working("Downloading release manifest");
     let manifest = get_text(&client, &format!("{base}/SHA256SUMS"))?;
     ui::working("Reading release manifest");
     let expected = checksum_for(&manifest, &asset)?;
-    ui::working(format!("Downloading {asset}"));
-    let binary = get_bytes(&client, &format!("{base}/{asset}"), &asset)?;
+    ui::action(format!("Downloading {asset}"));
+    let binary = get_bytes(&client, &format!("{base}/{asset}"))?;
     ui::working("Verifying checksum");
     verify_checksum(&binary, &expected, &asset)?;
 
@@ -50,7 +55,7 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
     #[cfg(not(windows))]
     replace_now(&current, &staged)?;
 
-    ui::success("Downloaded verified Shu release");
+    ui::success(format!("Updated Shu to {version}"));
     #[cfg(windows)]
     ui::detail(
         "location",
@@ -62,16 +67,39 @@ pub fn upgrade(args: &UpgradeArgs) -> Result<()> {
 }
 
 /// Build a GitHub Release download base for the latest or one named release.
-fn release_base(version: Option<&str>) -> String {
-    match version {
-        None | Some("latest") => {
-            format!("https://github.com/{RELEASE_REPOSITORY}/releases/latest/download")
-        }
-        Some(version) => {
-            let tag = version.strip_prefix('v').unwrap_or(version);
-            format!("https://github.com/{RELEASE_REPOSITORY}/releases/download/v{tag}")
+fn release_base(version: &str) -> String {
+    format!("https://github.com/{RELEASE_REPOSITORY}/releases/download/{version}")
+}
+
+/// Resolve a named release or GitHub's current release to a visible tag.
+fn release_version(client: &ureq::Agent, requested: Option<&str>) -> Result<String> {
+    match requested.filter(|version| *version != "latest") {
+        Some(version) => Ok(normalize_tag(version)),
+        None => {
+            let response = http::get(
+                client,
+                &format!("https://api.github.com/repos/{RELEASE_REPOSITORY}/releases/latest"),
+                "latest release metadata",
+            )?;
+            let mut body = response.into_body();
+            let payload = body
+                .read_to_string()
+                .context("could not read latest release metadata")?;
+            let release: ReleaseMetadata = serde_json::from_str(&payload)
+                .context("could not parse latest release metadata")?;
+            Ok(normalize_tag(&release.tag_name))
         }
     }
+}
+
+/// Keep release URLs and human output consistently tag-shaped.
+fn normalize_tag(version: &str) -> String {
+    format!("v{}", version.trim_start_matches('v'))
+}
+
+#[derive(Deserialize)]
+struct ReleaseMetadata {
+    tag_name: String,
 }
 
 /// Return the release target matching the currently executing binary.
@@ -101,7 +129,7 @@ fn get_text(client: &ureq::Agent, url: &str) -> Result<String> {
 }
 
 /// Download a binary release asset while reporting its progress to the terminal.
-fn get_bytes(client: &ureq::Agent, url: &str, asset: &str) -> Result<Vec<u8>> {
+fn get_bytes(client: &ureq::Agent, url: &str) -> Result<Vec<u8>> {
     let mut response = http::get(client, url, "release asset").with_context(|| {
             format!(
                 "release asset was unavailable: {url}. Check your internet connection and release access"
@@ -116,7 +144,7 @@ fn get_bytes(client: &ureq::Agent, url: &str, asset: &str) -> Result<Vec<u8>> {
         .and_then(|length| usize::try_from(length).ok())
         .unwrap_or_default();
     let mut bytes = Vec::with_capacity(capacity);
-    let mut progress = DownloadProgress::new(asset, content_length);
+    let mut progress = DownloadProgress::new(content_length);
     let mut reader = response.body_mut().as_reader();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -134,9 +162,7 @@ fn get_bytes(client: &ureq::Agent, url: &str, asset: &str) -> Result<Vec<u8>> {
 }
 
 /// Render compact, rate-limited binary download progress on standard error.
-struct DownloadProgress<'a> {
-    /// Human-readable release asset name.
-    asset: &'a str,
+struct DownloadProgress {
     /// Advertised response size, when the server provides one.
     total: Option<u64>,
     /// Number of bytes received so far.
@@ -145,11 +171,10 @@ struct DownloadProgress<'a> {
     last_rendered: u64,
 }
 
-impl<'a> DownloadProgress<'a> {
+impl DownloadProgress {
     /// Create a reporter for one response body.
-    fn new(asset: &'a str, total: Option<u64>) -> Self {
+    fn new(total: Option<u64>) -> Self {
         Self {
-            asset,
             total,
             downloaded: 0,
             last_rendered: 0,
@@ -174,7 +199,7 @@ impl<'a> DownloadProgress<'a> {
 
     /// Rewrite one interactive line with the transferred byte count and percentage.
     fn render(&mut self) -> Result<()> {
-        ui::render_download_progress(self.asset, self.downloaded, self.total)?;
+        ui::render_download_progress(self.downloaded, self.total)?;
         self.last_rendered = self.downloaded;
         Ok(())
     }
@@ -269,10 +294,10 @@ mod tests {
     }
 
     #[test]
-    fn keeps_latest_and_normalizes_version_tags() {
-        assert!(release_base(None).ends_with("releases/latest/download"));
-        assert!(release_base(Some("0.1.0")).ends_with("releases/download/v0.1.0"));
-        assert!(release_base(Some("v0.1.0")).ends_with("releases/download/v0.1.0"));
+    fn normalizes_release_tags_for_download_urls() {
+        assert_eq!(normalize_tag("0.1.0"), "v0.1.0");
+        assert_eq!(normalize_tag("v0.1.0"), "v0.1.0");
+        assert!(release_base("v0.1.0").ends_with("releases/download/v0.1.0"));
     }
 
     #[test]

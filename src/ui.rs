@@ -106,25 +106,34 @@ pub fn accent(value: impl std::fmt::Display) -> String {
 }
 
 /// Draw byte-based download progress without inventing totals or percentages.
-pub fn render_download_progress(
-    asset: &str,
-    downloaded: u64,
-    total: Option<u64>,
-) -> std::io::Result<()> {
+pub fn render_download_progress(downloaded: u64, total: Option<u64>) -> std::io::Result<()> {
     if !stderr().is_terminal() {
         return Ok(());
     }
     let detail = match total.filter(|total| *total > 0) {
         Some(total) => format!(
-            "{} / {}  {}%",
+            "{}  {} / {}  {}%",
+            progress_bar(downloaded, total),
             human_size(downloaded),
             human_size(total),
-            downloaded.saturating_mul(100) / total
+            u128::from(downloaded) * 100 / u128::from(total)
         ),
         None => human_size(downloaded),
     };
-    eprint!("\r{} Downloading {asset}  {detail}", working_marker());
+    eprint!("\r  {detail}");
     stderr().flush()
+}
+
+/// Render a fixed-width bar from actual byte counts for a sized transfer.
+fn progress_bar(downloaded: u64, total: u64) -> String {
+    const WIDTH: u64 = 16;
+    let filled =
+        (u128::from(downloaded.min(total)) * u128::from(WIDTH) / u128::from(total)) as usize;
+    accent(format!(
+        "[{}{}]",
+        "█".repeat(filled),
+        "·".repeat(WIDTH as usize - filled)
+    ))
 }
 
 /// Format a byte count for compact human-facing progress.

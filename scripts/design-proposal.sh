@@ -120,7 +120,7 @@ else
 fi
 printf '  '; accent; printf '→ '; reset; printf 'Downloading shu-darwin-arm64.tar.gz\n'
 printf '  '; accent; printf '[███████████······] '; reset; printf '4.2 MiB / 6.8 MiB  62%%\n'
-printf '  '; good; printf '✓ '; reset; printf 'Installed shu 0.1.16\n'
+printf '  '; good; printf '✓ '; reset; printf 'Updated shu to v0.1.16\n'
 printf '  '; label 'location'; printf '~/.local/bin/shu\n'
 printf '  '; label 'next'; printf 'shu --version\n'
 
@@ -213,7 +213,7 @@ muted; printf '  shu upgrade\n'; reset
 printf '  '; label 'version'; printf '0.1.15 → 0.1.16\n'
 printf '  '; accent; printf '… '; reset; printf 'Downloading shu-darwin-arm64.tar.gz\n'
 printf '  '; accent; printf '[███████████······] '; reset; printf '4.2 MiB / 6.8 MiB  62%%\n'
-printf '  '; good; printf '✓ '; reset; printf 'Updated shu to 0.1.16\n'
+printf '  '; good; printf '✓ '; reset; printf 'Updated shu to v0.1.16\n'
 printf '\n'
 accent; printf 'Version\n'; reset
 muted; printf '  shu --version\n'; reset

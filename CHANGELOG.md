@@ -15,6 +15,19 @@ and releases use [Semantic Versioning](https://semver.org/).
   coverage, repeated CLI and Docker end-to-end runs, and semantic Windows path
   assertions.
 
+## [0.1.17] - 2026-07-28
+
+### Fixed
+
+- Keep every picker row at column zero in raw terminals, preventing long
+  repository identities and paths from drifting into adjacent rows.
+
+### Changed
+
+- `shu upgrade` now resolves and shows the exact target release version before
+  downloading, and uses a single cyan, byte-backed progress bar throughout the
+  binary transfer.
+
 ## [0.1.16] - 2026-07-28
 
 ### Added
@@ -291,7 +304,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.16...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/wiedymi/shu/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/wiedymi/shu/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/wiedymi/shu/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/wiedymi/shu/compare/v0.1.13...v0.1.14
