@@ -894,6 +894,10 @@ impl Fixture {
             .env("GIT_CONFIG_COUNT", "1")
             .env("GIT_CONFIG_KEY_0", key)
             .env("GIT_CONFIG_VALUE_0", "https://github.com/example-org/")
+            .env("GIT_AUTHOR_NAME", "Shu Test")
+            .env("GIT_AUTHOR_EMAIL", "shu@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Shu Test")
+            .env("GIT_COMMITTER_EMAIL", "shu@example.invalid")
             .output()
             .unwrap()
     }
