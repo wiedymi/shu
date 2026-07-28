@@ -38,6 +38,7 @@ pub fn init(cli: &Cli) -> Result<()> {
             version: 1,
             root: crate::model::default_root(),
             repos: vec![],
+            collections: Default::default(),
             sync: None,
         },
     )?;

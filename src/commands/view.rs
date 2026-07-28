@@ -23,7 +23,7 @@ use super::catalog::discover_repos;
 /// Compare declared catalog state against repositories detected locally.
 pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
-    let repos = catalog::filtered(&catalog, filter).collect::<Vec<_>>();
+    let repos = catalog::filtered(&catalog, filter)?;
     if cli.json {
         return print_json(cli, &catalog, repos);
     }
@@ -39,7 +39,8 @@ pub fn status(cli: &Cli, filter: &FilterArgs) -> Result<()> {
 pub fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
     let max_age = args.stale.as_deref().map(parse_duration).transpose()?;
-    let repos = catalog::filtered(&catalog, &args.filter)
+    let repos = catalog::filtered(&catalog, &args.filter)?
+        .into_iter()
         .filter(|repo| {
             let path = locations::present_path(&catalog, repo).ok().flatten();
             (!args.missing || path.is_none())

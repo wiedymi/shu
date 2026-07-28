@@ -22,25 +22,29 @@ use crate::{
 
 /// Restore a catalog source, if supplied, and clone all selected missing entries.
 pub fn restore(cli: &Cli, args: &RestoreArgs) -> Result<()> {
+    restore_with_selection(cli, args, args.source.is_some())
+}
+
+/// Restore repositories, optionally presenting source-catalog selection first.
+fn restore_with_selection(cli: &Cli, args: &RestoreArgs, select_source: bool) -> Result<()> {
     if let Some(source) = &args.source {
         activate_source(cli, args, source)?;
     }
     let (catalog_path, mut catalog) = catalog::load_or_initialize(cli)?;
-    let repo_indices = catalog
-        .repos
-        .iter()
-        .enumerate()
-        .filter(|(_, repo)| {
-            args.filter.state.is_none_or(|state| repo.state == state)
-                && args
-                    .filter
-                    .tag
-                    .as_ref()
-                    .is_none_or(|tag| repo.tags.contains(tag))
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    if !confirm_restore(cli, args, repo_indices.len())? {
+    let mut repo_indices = catalog::filtered_indices(&catalog, &args.filter)?;
+    if select_source && !cli.yes {
+        if cli.non_interactive {
+            bail!(
+                "`shu restore <source>` requires selection; pass --yes to restore all matching repositories"
+            )
+        }
+        let Some(selected) = super::restore_picker::select(&catalog, repo_indices)? else {
+            ui::warning("No changes made.");
+            return Ok(());
+        };
+        repo_indices = selected;
+    }
+    if !confirm_restore(cli, args, repo_indices.len(), select_source)? {
         ui::warning("No changes made.");
         return Ok(());
     }
@@ -83,7 +87,7 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
             remote = "<remote>"
         )
     })?;
-    restore(
+    restore_with_selection(
         cli,
         &RestoreArgs {
             source: Some(sync.remote),
@@ -91,6 +95,7 @@ pub fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
             git_ref: Some(sync.r#ref),
             filter: FilterArgs::default(),
         },
+        false,
     )
 }
 
@@ -364,14 +369,26 @@ fn activate_git_source(cli: &Cli, args: &RestoreArgs, remote: &str) -> Result<()
 ///
 /// Returns `false` for an explicit cancellation so cancellation remains a
 /// successful, non-mutating command outcome.
-fn confirm_restore(cli: &Cli, args: &RestoreArgs, count: usize) -> Result<bool> {
+fn confirm_restore(
+    cli: &Cli,
+    args: &RestoreArgs,
+    count: usize,
+    selected_source: bool,
+) -> Result<bool> {
     if args.source.is_none() || cli.yes || cli.non_interactive {
         return Ok(true);
     }
-    eprint!("Catalog contains {count} repositories. Continue? [Y/n] ");
+    if selected_source {
+        eprint!("Restore {count} repositories? Type yes to clone these repositories: ");
+    } else {
+        eprint!("Catalog contains {count} repositories. Continue? [Y/n] ");
+    }
     io::stderr().flush()?;
     let mut response = String::new();
     io::stdin().read_line(&mut response)?;
+    if selected_source {
+        return Ok(response.trim().eq_ignore_ascii_case("yes"));
+    }
     if response.trim().is_empty()
         || response.trim().eq_ignore_ascii_case("y")
         || response.trim().eq_ignore_ascii_case("yes")

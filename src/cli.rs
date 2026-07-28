@@ -217,12 +217,15 @@ pub struct DoctorArgs {
     pub check_github: bool,
 }
 
-/// Shared tag and lifecycle filters.
+/// Shared collection, tag, and lifecycle filters.
 #[derive(Args, Default)]
 pub struct FilterArgs {
-    /// Include only repositories with this tag.
+    /// Include only repositories in this named collection.
     #[arg(long)]
-    pub tag: Option<String>,
+    pub collection: Option<String>,
+    /// Include only repositories with this tag; repeat to require every tag.
+    #[arg(long)]
+    pub tag: Vec<String>,
     /// Include only repositories in this lifecycle state.
     #[arg(long, value_enum)]
     pub state: Option<Lifecycle>,
@@ -240,7 +243,7 @@ pub struct RestoreArgs {
     /// Git branch or tag to use when the source is a Git repository.
     #[arg(long = "ref")]
     pub git_ref: Option<String>,
-    /// Limit restoration to a tag or lifecycle state.
+    /// Limit restoration to a collection, tags, or lifecycle state.
     #[command(flatten)]
     pub filter: FilterArgs,
 }

@@ -4,6 +4,7 @@ mod catalog;
 mod doctor;
 mod pick;
 pub(crate) mod restore;
+mod restore_picker;
 mod shell;
 mod upgrade;
 mod view;

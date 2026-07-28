@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Result, bail};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     style::{Color, Stylize},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
@@ -25,7 +25,8 @@ use crate::{
 /// Interactively select a present local repository with Shu's built-in fuzzy picker.
 pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
-    let candidates = catalog::filtered(&catalog, &args.filter)
+    let candidates = catalog::filtered(&catalog, &args.filter)?
+        .into_iter()
         .map(|repo| candidates(&catalog, repo))
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -125,7 +126,7 @@ fn choose_interactively(
         }
         terminal.render(&query, &matches, selected)?;
         match event::read()? {
-            Event::Key(key) => match key {
+            Event::Key(key) if key.kind != KeyEventKind::Release => match key {
                 KeyEvent {
                     code: KeyCode::Esc, ..
                 }

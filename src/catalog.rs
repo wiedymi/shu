@@ -10,7 +10,7 @@ use crate::{
     cli::{Cli, FilterArgs},
     git::git_output,
     identity::normalize_identity,
-    model::{Catalog, Repo},
+    model::{Catalog, Collection, Repo},
 };
 use anyhow::{Context, Result, anyhow, bail};
 use directories::ProjectDirs;
@@ -55,6 +55,7 @@ pub fn load_or_initialize(cli: &Cli) -> Result<(PathBuf, Catalog)> {
                 version: 1,
                 root: crate::model::default_root(),
                 repos: vec![],
+                collections: Default::default(),
                 sync: None,
             },
         )?;
@@ -107,6 +108,7 @@ pub fn merge_portable(local: &mut Catalog, portable: Catalog) -> Result<()> {
             Ok(repo)
         })
         .collect::<Result<Vec<_>>>()?;
+    local.collections = portable.collections;
     local.sync = portable.sync;
     Ok(())
 }
@@ -115,6 +117,8 @@ pub fn merge_portable(local: &mut Catalog, portable: Catalog) -> Result<()> {
 #[derive(Serialize)]
 struct PortableCatalog<'a> {
     version: u32,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    collections: &'a std::collections::BTreeMap<String, Collection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sync: Option<&'a crate::model::Sync>,
     repos: Vec<PortableRepo<'a>>,
@@ -124,6 +128,7 @@ impl<'a> From<&'a Catalog> for PortableCatalog<'a> {
     fn from(catalog: &'a Catalog) -> Self {
         Self {
             version: catalog.version,
+            collections: &catalog.collections,
             sync: catalog.sync.as_ref(),
             repos: catalog.repos.iter().map(PortableRepo::from).collect(),
         }
@@ -167,18 +172,55 @@ pub fn source_from_argument(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
-/// Iterate catalog entries that satisfy optional tag and lifecycle filters.
-pub fn filtered<'a>(
-    catalog: &'a Catalog,
-    filter: &'a FilterArgs,
-) -> impl Iterator<Item = &'a Repo> {
-    catalog.repos.iter().filter(move |repo| {
-        filter.state.is_none_or(|state| repo.state == state)
-            && filter
-                .tag
-                .as_ref()
-                .is_none_or(|tag| repo.tags.iter().any(|item| item == tag))
-    })
+/// Return catalog entries satisfying a named collection, tags, and lifecycle state.
+pub fn filtered<'a>(catalog: &'a Catalog, filter: &FilterArgs) -> Result<Vec<&'a Repo>> {
+    Ok(filtered_indices(catalog, filter)?
+        .into_iter()
+        .map(|index| &catalog.repos[index])
+        .collect())
+}
+
+/// Return indices of entries satisfying a named collection, tags, and lifecycle state.
+pub fn filtered_indices(catalog: &Catalog, filter: &FilterArgs) -> Result<Vec<usize>> {
+    let collection_tags: &[String] = match filter.collection.as_deref() {
+        Some(name) => {
+            &catalog
+                .collections
+                .get(name)
+                .ok_or_else(|| unknown_collection(catalog, name))?
+                .tags
+        }
+        None => &[],
+    };
+    let required_tags = collection_tags
+        .iter()
+        .chain(filter.tag.iter())
+        .collect::<Vec<_>>();
+    Ok(catalog
+        .repos
+        .iter()
+        .enumerate()
+        .filter(|(_, repo)| {
+            filter.state.is_none_or(|state| repo.state == state)
+                && required_tags
+                    .iter()
+                    .all(|tag| repo.tags.iter().any(|item| item == *tag))
+        })
+        .map(|(index, _)| index)
+        .collect())
+}
+
+/// Explain an unknown collection without exposing storage details.
+fn unknown_collection(catalog: &Catalog, name: &str) -> anyhow::Error {
+    let available = catalog.collections.keys().cloned().collect::<Vec<_>>();
+    if available.is_empty() {
+        anyhow!("collection not found: {name}; this catalog defines no collections")
+    } else {
+        anyhow!(
+            "collection not found: {name}; available collections: {}",
+            available.join(", ")
+        )
+    }
 }
 
 /// Resolve a selector to exactly one catalog entry.
@@ -270,6 +312,7 @@ mod tests {
                     primary: None,
                 },
             ],
+            collections: Default::default(),
             sync: None,
         }
     }
