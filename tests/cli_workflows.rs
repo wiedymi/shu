@@ -855,6 +855,47 @@ fn records_multiple_clones_in_the_catalog_and_discovers_git_worktrees() {
 }
 
 #[test]
+fn picker_ignores_a_prunable_worktree_with_a_missing_path() {
+    let fixture = Fixture::new();
+    let catalog = fixture.write_catalog("library.toml");
+    let linked = fixture.temp.path().join("missing-worktree");
+
+    fixture
+        .shu([
+            "--catalog",
+            catalog.to_str().unwrap(),
+            "add",
+            fixture.seed.to_str().unwrap(),
+        ])
+        .assert_success();
+    run_git(
+        &fixture.seed,
+        ["worktree", "add", "--detach"],
+        Some(&linked),
+    );
+    fs::remove_dir_all(&linked).unwrap();
+    assert!(
+        run_git_output(&fixture.seed, ["worktree", "list", "--porcelain"])
+            .contains(linked.to_str().unwrap()),
+        "the regression requires Git to retain the missing worktree"
+    );
+
+    let picked = fixture.shu([
+        "--catalog",
+        catalog.to_str().unwrap(),
+        "pick",
+        "--filter",
+        "api",
+        "--path-only",
+    ]);
+    picked.assert_success();
+    assert_same_path(
+        String::from_utf8(picked.stdout).unwrap().trim(),
+        &fixture.seed,
+    );
+}
+
+#[test]
 fn migrates_a_clean_repository_into_shus_canonical_layout() {
     let fixture = Fixture::new();
     let catalog = fixture.write_empty_catalog("library.toml");

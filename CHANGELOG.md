@@ -7,6 +7,13 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-07-30
+
+### Fixed
+
+- Ignore Git worktree entries whose directories no longer exist so a stale
+  temporary worktree cannot prevent the repository picker from opening.
+
 ## [0.1.22] - 2026-07-28
 
 ### Added
@@ -352,7 +359,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.22...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/wiedymi/shu/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/wiedymi/shu/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/wiedymi/shu/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/wiedymi/shu/compare/v0.1.19...v0.1.20
