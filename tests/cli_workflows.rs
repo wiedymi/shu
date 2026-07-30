@@ -855,7 +855,7 @@ fn records_multiple_clones_in_the_catalog_and_discovers_git_worktrees() {
 }
 
 #[test]
-fn picker_ignores_a_prunable_worktree_with_a_missing_path() {
+fn picker_ignores_a_reported_worktree_with_a_missing_path() {
     let fixture = Fixture::new();
     let catalog = fixture.write_catalog("library.toml");
     let linked = fixture.temp.path().join("missing-worktree");
@@ -873,6 +873,7 @@ fn picker_ignores_a_prunable_worktree_with_a_missing_path() {
         ["worktree", "add", "--detach"],
         Some(&linked),
     );
+    run_git(&fixture.seed, ["worktree", "lock"], Some(&linked));
     fs::remove_dir_all(&linked).unwrap();
     assert!(
         normalize_path(&run_git_output(
