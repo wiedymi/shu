@@ -68,25 +68,36 @@ pub fn is_clean(path: &Path) -> Result<bool> {
 
 /// Return whether Git reports another linked working tree for this repository.
 pub fn has_linked_worktrees(path: &Path) -> Result<bool> {
-    Ok(worktrees(path)?.len() > 1)
+    Ok(reported_worktrees(path)?.len() > 1)
 }
 
-/// Return every working-tree path Git associates with a local repository.
+/// Return every present working-tree path Git associates with a local repository.
 ///
 /// The first entry is normally the main working tree and later entries are
 /// linked worktrees. Paths are read from Git each time so Shu never stores
-/// worktree state in `shu.toml`.
+/// worktree state in `shu.toml`. Git may retain prunable entries after a
+/// temporary worktree disappears; those absent paths cannot be picked and do
+/// not prevent the remaining repositories from being used.
 pub fn worktrees(path: &Path) -> Result<Vec<PathBuf>> {
-    output(path, ["worktree", "list", "--porcelain"])?
+    reported_worktrees(path)?
+        .into_iter()
+        .map(|path| match fs::canonicalize(&path) {
+            Ok(path) => Ok(Some(presentation_path(path))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error)
+                .with_context(|| format!("could not resolve Git worktree {}", path.display())),
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|paths| paths.into_iter().flatten().collect())
+}
+
+/// Return every worktree path in Git's metadata, including prunable entries.
+fn reported_worktrees(path: &Path) -> Result<Vec<PathBuf>> {
+    Ok(output(path, ["worktree", "list", "--porcelain"])?
         .lines()
         .filter_map(|line| line.strip_prefix("worktree "))
-        .map(|value| {
-            let path = PathBuf::from(value);
-            fs::canonicalize(&path)
-                .map(presentation_path)
-                .with_context(|| format!("could not resolve Git worktree {}", path.display()))
-        })
-        .collect()
+        .map(PathBuf::from)
+        .collect())
 }
 
 /// Run Git in a working directory and return trimmed standard output on success.
