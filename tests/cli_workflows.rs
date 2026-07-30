@@ -875,8 +875,11 @@ fn picker_ignores_a_prunable_worktree_with_a_missing_path() {
     );
     fs::remove_dir_all(&linked).unwrap();
     assert!(
-        run_git_output(&fixture.seed, ["worktree", "list", "--porcelain"])
-            .contains(linked.to_str().unwrap()),
+        normalize_path(&run_git_output(
+            &fixture.seed,
+            ["worktree", "list", "--porcelain"]
+        ))
+        .contains(&normalize_path(linked.to_str().unwrap())),
         "the regression requires Git to retain the missing worktree"
     );
 
