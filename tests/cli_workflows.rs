@@ -875,13 +875,14 @@ fn picker_ignores_a_reported_worktree_with_a_missing_path() {
     );
     run_git(&fixture.seed, ["worktree", "lock"], Some(&linked));
     fs::remove_dir_all(&linked).unwrap();
-    assert!(
-        normalize_path(&run_git_output(
-            &fixture.seed,
-            ["worktree", "list", "--porcelain"]
-        ))
-        .contains(&normalize_path(linked.to_str().unwrap())),
-        "the regression requires Git to retain the missing worktree"
+    let reported = run_git_output(&fixture.seed, ["worktree", "list", "--porcelain"]);
+    assert_eq!(
+        reported
+            .lines()
+            .filter(|line| line.starts_with("worktree "))
+            .count(),
+        2,
+        "the regression requires Git to retain the missing worktree:\n{reported}"
     );
 
     let picked = fixture.shu([
