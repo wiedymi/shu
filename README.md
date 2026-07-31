@@ -11,7 +11,7 @@ places, and lets you jump to them quickly. Its catalog is a readable
 `shu.toml` file—your repositories stay normal Git repositories under your
 control.
 
-[Watch Shu in action (33-second video)](assets/shu-showcase.mp4)
+https://github.com/user-attachments/assets/63249a31-c91e-44bb-9ae8-167468ead2da
 
 ## Install
 
