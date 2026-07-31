@@ -11,6 +11,8 @@ places, and lets you jump to them quickly. Its catalog is a readable
 `shu.toml` file—your repositories stay normal Git repositories under your
 control.
 
+https://github.com/user-attachments/assets/63249a31-c91e-44bb-9ae8-167468ead2da
+
 ## Install
 
 Download a release for macOS, Windows, or Linux from
