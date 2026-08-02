@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashSet,
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
@@ -18,10 +19,23 @@ use serde::Serialize;
 
 /// Return the active catalog path, honoring the global `--catalog` override.
 pub fn catalog_path(cli: &Cli) -> Result<PathBuf> {
-    Ok(cli
-        .catalog
-        .clone()
-        .unwrap_or_else(|| dirs().unwrap().config_dir().join("shu.toml")))
+    match &cli.catalog {
+        Some(path) => Ok(path.clone()),
+        None => default_catalog_path(std::env::var_os("XDG_CONFIG_HOME")),
+    }
+}
+
+/// Return the environment- or platform-selected catalog path.
+fn default_catalog_path(xdg_config_home: Option<OsString>) -> Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    if let Some(config_home) = xdg_config_home {
+        return Ok(PathBuf::from(config_home).join("shu").join("shu.toml"));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = xdg_config_home;
+
+    Ok(dirs()?.config_dir().join("shu.toml"))
 }
 
 /// Load and validate the selected catalog, returning its path and parsed data.
@@ -333,13 +347,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn explicit_catalog_takes_precedence_over_the_default() {
+        let path = PathBuf::from("custom/shu.toml");
+        let cli = Cli {
+            catalog: Some(path.clone()),
+            json: false,
+            non_interactive: false,
+            yes: false,
+            command: None,
+        };
+
+        assert_eq!(catalog_path(&cli).unwrap(), path);
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
-    fn uses_the_com_wiedymi_shu_application_identifier() {
+    fn uses_xdg_config_home_for_the_catalog() {
+        assert_eq!(
+            default_catalog_path(Some(OsString::from("/tmp/shu-xdg"))).unwrap(),
+            PathBuf::from("/tmp/shu-xdg/shu/shu.toml")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn uses_the_com_wiedymi_shu_application_identifier_without_xdg_config_home() {
         assert!(
-            dirs()
+            default_catalog_path(None)
                 .unwrap()
-                .config_dir()
                 .to_string_lossy()
                 .contains("com.wiedymi.shu")
         );
