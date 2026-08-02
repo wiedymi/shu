@@ -7,6 +7,11 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Make the repository picker start promptly on larger catalogs by observing
+  each checkout once and running independent Git worktree lookups concurrently.
+
 ### Fixed
 
 - Respect `XDG_CONFIG_HOME` for the default catalog path on macOS while

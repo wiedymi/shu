@@ -4,9 +4,10 @@ use std::{
     cmp::Reverse,
     io::{Write, stderr},
     path::PathBuf,
+    thread,
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -25,13 +26,7 @@ use crate::{
 /// Interactively select a present local repository with Shu's built-in fuzzy picker.
 pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
     let (_, catalog) = catalog::load_or_initialize(cli)?;
-    let candidates = catalog::filtered(&catalog, &args.filter)?
-        .into_iter()
-        .map(|repo| candidates(&catalog, repo))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let candidates = all_candidates(&catalog, catalog::filtered(&catalog, &args.filter)?)?;
     if candidates.is_empty() {
         bail!(
             "no catalogued repositories are available locally. Run `shu status` to see expected or recorded paths; use `shu ensure <repository>` to clone one, or run `shu add .` from an existing clone to record it"
@@ -53,6 +48,43 @@ pub fn pick(cli: &Cli, args: &PickArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Observe independent repositories concurrently without overwhelming the machine.
+fn all_candidates(catalog: &crate::model::Catalog, repos: Vec<&Repo>) -> Result<Vec<Candidate>> {
+    const MAX_WORKERS: usize = 8;
+
+    if repos.is_empty() {
+        return Ok(Vec::new());
+    }
+    let workers = thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(MAX_WORKERS)
+        .min(repos.len());
+    let chunk_size = repos.len().div_ceil(workers);
+    thread::scope(|scope| {
+        let handles = repos
+            .chunks(chunk_size)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .map(|repo| candidates(catalog, repo))
+                        .collect::<Result<Vec<_>>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut observed = Vec::new();
+        for handle in handles {
+            observed.extend(
+                handle
+                    .join()
+                    .map_err(|_| anyhow!("repository observation worker panicked"))??,
+            );
+        }
+        Ok(observed.into_iter().flatten().collect())
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -83,32 +115,87 @@ impl LocationKind {
 
 /// Convert each present clone and Git worktree into a searchable picker candidate.
 fn candidates(catalog: &crate::model::Catalog, repo: &Repo) -> Result<Vec<Candidate>> {
-    let clones = locations::present_paths(catalog, repo)?;
-    let primary = locations::present_path(catalog, repo)?;
-    locations::pickable_paths(catalog, repo).map(|paths| {
-        paths
-            .into_iter()
-            .map(|path| {
-                let location = if primary.as_ref().is_some_and(|primary| primary == &path) {
-                    LocationKind::Primary
-                } else if clones.contains(&path) {
-                    LocationKind::Checkout
-                } else {
-                    LocationKind::Worktree
-                };
-                let branch = (location == LocationKind::Worktree)
-                    .then(|| git::output(&path, ["branch", "--show-current"]).ok())
-                    .flatten()
-                    .filter(|branch| !branch.is_empty());
-                Candidate {
-                    identity: repo.source.clone(),
-                    location,
-                    branch,
-                    path,
+    let primary = locations::primary_path(catalog, repo)?;
+    let mut clone_paths = locations::remembered_paths(catalog, repo)?;
+    push_unique(&mut clone_paths, locations::managed_path(catalog, repo)?);
+
+    let mut probes = clone_paths
+        .iter()
+        .cloned()
+        .map(|path| (path, true))
+        .collect::<Vec<_>>();
+    if let Some(primary) = &primary
+        && !clone_paths.contains(primary)
+    {
+        probes.push((primary.clone(), false));
+    }
+
+    let mut clones = Vec::new();
+    let mut worktrees = Vec::new();
+    let mut primary_is_present = false;
+    for (path, is_clone) in probes {
+        let Some(observed) = git::inspect_worktrees(&path)? else {
+            continue;
+        };
+        if primary.as_ref() == Some(&path) {
+            primary_is_present = true;
+        }
+        if is_clone {
+            push_unique(&mut clones, path);
+            for worktree in observed {
+                if !worktrees
+                    .iter()
+                    .any(|known: &git::Worktree| known.path == worktree.path)
+                {
+                    worktrees.push(worktree);
                 }
-            })
-            .collect()
-    })
+            }
+        }
+    }
+
+    let primary = primary.filter(|_| primary_is_present);
+    let mut candidates = Vec::new();
+    if let Some(primary) = &primary {
+        candidates.push(Candidate {
+            identity: repo.source.clone(),
+            location: LocationKind::Primary,
+            branch: None,
+            path: primary.clone(),
+        });
+    }
+    for clone in clones {
+        if primary.as_ref() != Some(&clone) {
+            candidates.push(Candidate {
+                identity: repo.source.clone(),
+                location: LocationKind::Checkout,
+                branch: None,
+                path: clone,
+            });
+        }
+    }
+    for worktree in worktrees {
+        if primary.as_ref() == Some(&worktree.path)
+            || candidates
+                .iter()
+                .any(|candidate| candidate.path == worktree.path)
+        {
+            continue;
+        }
+        candidates.push(Candidate {
+            identity: repo.source.clone(),
+            location: LocationKind::Worktree,
+            branch: worktree.branch,
+            path: worktree.path,
+        });
+    }
+    Ok(candidates)
+}
+
+/// Append one path unless the same location is already known.
+fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.contains(&path) {
+        paths.push(path);
+    }
 }
 
 /// Run a raw-key terminal interface until the user selects a candidate or cancels.
