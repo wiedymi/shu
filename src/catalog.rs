@@ -28,8 +28,8 @@ pub fn catalog_path(cli: &Cli) -> Result<PathBuf> {
 /// Return the environment- or platform-selected catalog path.
 fn default_catalog_path(xdg_config_home: Option<OsString>) -> Result<PathBuf> {
     #[cfg(target_os = "macos")]
-    if let Some(config_home) = xdg_config_home {
-        return Ok(PathBuf::from(config_home).join("shu").join("shu.toml"));
+    if let Some(config_home) = crate::paths::valid_xdg_config_home(xdg_config_home) {
+        return Ok(config_home.join("shu").join("shu.toml"));
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -368,6 +368,16 @@ mod tests {
             default_catalog_path(Some(OsString::from("/tmp/shu-xdg"))).unwrap(),
             PathBuf::from("/tmp/shu-xdg/shu/shu.toml")
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn ignores_empty_and_relative_xdg_config_homes_for_the_catalog() {
+        let native = default_catalog_path(None).unwrap();
+
+        for value in [OsString::new(), OsString::from("relative/config")] {
+            assert_eq!(default_catalog_path(Some(value)).unwrap(), native);
+        }
     }
 
     #[cfg(target_os = "macos")]
