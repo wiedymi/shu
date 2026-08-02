@@ -12,6 +12,15 @@ use std::{
 use crate::identity::normalize_identity;
 use anyhow::{Context, Result, anyhow, bail};
 
+/// One accessible working tree reported by Git.
+#[derive(Debug)]
+pub struct Worktree {
+    /// Canonical filesystem location of the working tree.
+    pub path: PathBuf,
+    /// Checked-out local branch, or `None` when the working tree is detached.
+    pub branch: Option<String>,
+}
+
 /// Return whether a path is an accessible Git working tree.
 pub fn is_repo(path: &Path) -> bool {
     output(path, ["rev-parse", "--is-inside-work-tree"]).is_ok_and(|value| value == "true")
@@ -79,35 +88,81 @@ pub fn has_linked_worktrees(path: &Path) -> Result<bool> {
 /// temporary worktree disappears; those absent paths cannot be picked and do
 /// not prevent the remaining repositories from being used.
 pub fn worktrees(path: &Path) -> Result<Vec<PathBuf>> {
-    reported_worktrees(path)?
+    Ok(accessible_worktrees(reported_worktrees(path)?)?
         .into_iter()
-        .map(|path| match fs::canonicalize(&path) {
-            Ok(path) => Ok(Some(presentation_path(path))),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error)
-                .with_context(|| format!("could not resolve Git worktree {}", path.display())),
-        })
-        .collect::<Result<Vec<_>>>()
-        .map(|paths| paths.into_iter().flatten().collect())
+        .map(|worktree| worktree.path)
+        .collect())
+}
+
+/// Observe an accessible repository and all of its working trees in one Git call.
+///
+/// A non-repository path returns `None`. Failures to start Git or decode its
+/// successful response remain errors so callers do not mistake a broken Git
+/// installation for an absent checkout.
+pub fn inspect_worktrees(path: &Path) -> Result<Option<Vec<Worktree>>> {
+    if !path.is_dir() {
+        return Ok(None);
+    }
+    let output = command_output(path, ["worktree", "list", "--porcelain"])?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let worktrees = parse_worktrees(&String::from_utf8(output.stdout)?)?;
+    accessible_worktrees(worktrees).map(Some)
 }
 
 /// Return every worktree path in Git's metadata, including prunable entries.
-fn reported_worktrees(path: &Path) -> Result<Vec<PathBuf>> {
-    Ok(output(path, ["worktree", "list", "--porcelain"])?
-        .lines()
-        .filter_map(|line| line.strip_prefix("worktree "))
-        .map(PathBuf::from)
-        .collect())
+fn reported_worktrees(path: &Path) -> Result<Vec<Worktree>> {
+    parse_worktrees(&output(path, ["worktree", "list", "--porcelain"])?)
+}
+
+/// Parse Git's worktree porcelain records, retaining branch facts needed by the picker.
+fn parse_worktrees(output: &str) -> Result<Vec<Worktree>> {
+    let mut worktrees: Vec<Worktree> = Vec::new();
+    for line in output.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            worktrees.push(Worktree {
+                path: PathBuf::from(path),
+                branch: None,
+            });
+        } else if let Some(branch) = line.strip_prefix("branch ") {
+            let worktree = worktrees
+                .last_mut()
+                .ok_or_else(|| anyhow!("Git reported a worktree branch before its path"))?;
+            worktree.branch = Some(
+                branch
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(branch)
+                    .to_owned(),
+            );
+        } else if line == "bare" {
+            worktrees.pop();
+        }
+    }
+    Ok(worktrees)
+}
+
+/// Canonicalize Git's reported worktrees and ignore paths retained only as stale metadata.
+fn accessible_worktrees(worktrees: Vec<Worktree>) -> Result<Vec<Worktree>> {
+    worktrees
+        .into_iter()
+        .map(|mut worktree| match fs::canonicalize(&worktree.path) {
+            Ok(path) => {
+                worktree.path = presentation_path(path);
+                Ok(Some(worktree))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error).with_context(|| {
+                format!("could not resolve Git worktree {}", worktree.path.display())
+            }),
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|worktrees| worktrees.into_iter().flatten().collect())
 }
 
 /// Run Git in a working directory and return trimmed standard output on success.
 pub fn output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
-    let result = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .with_context(|| "could not run git; ensure Git is installed")?;
+    let result = command_output(dir, args)?;
     if !result.status.success() {
         bail!(
             "git command failed in {}: {}",
@@ -116,6 +171,16 @@ pub fn output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<String> {
         );
     }
     Ok(String::from_utf8(result.stdout)?.trim().to_owned())
+}
+
+/// Run one Git subprocess while leaving command-specific status handling to the caller.
+fn command_output<const N: usize>(dir: &Path, args: [&str; N]) -> Result<std::process::Output> {
+    Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .with_context(|| "could not run git; ensure Git is installed")
 }
 
 /// Compatibility alias for [`output`], used by catalog code.
@@ -238,4 +303,30 @@ pub fn initialize(target: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_worktree_branches_and_detached_heads() {
+        let worktrees = parse_worktrees(
+            "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\nworktree /repo/feature\nHEAD def\nbranch refs/heads/feature/fast\n\nworktree /repo/detached\nHEAD 123\ndetached\n",
+        )
+        .unwrap();
+
+        assert_eq!(worktrees.len(), 3);
+        assert_eq!(worktrees[0].path, PathBuf::from("/repo"));
+        assert_eq!(worktrees[0].branch.as_deref(), Some("main"));
+        assert_eq!(worktrees[1].branch.as_deref(), Some("feature/fast"));
+        assert_eq!(worktrees[2].branch, None);
+    }
+
+    #[test]
+    fn excludes_bare_repositories_from_working_tree_results() {
+        let worktrees = parse_worktrees("worktree /repo.git\nHEAD abc\nbare\n").unwrap();
+
+        assert!(worktrees.is_empty());
+    }
 }
