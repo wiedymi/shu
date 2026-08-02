@@ -7,6 +7,11 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Respect `XDG_CONFIG_HOME` for the default catalog path on macOS while
+  preserving the native Application Support location when it is unset.
+
 ## [0.1.23] - 2026-07-30
 
 ### Fixed
