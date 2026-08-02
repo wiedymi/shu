@@ -7,10 +7,13 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-08-02
+
 ### Changed
 
 - Make the repository picker start promptly on larger catalogs by observing
   each checkout once and running independent Git worktree lookups concurrently.
+- Add an inline README showcase video for Shu's everyday repository workflow.
 
 ### Fixed
 
@@ -370,7 +373,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.23...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/wiedymi/shu/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/wiedymi/shu/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/wiedymi/shu/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/wiedymi/shu/compare/v0.1.20...v0.1.21
