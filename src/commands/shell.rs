@@ -1,7 +1,9 @@
 //! Persistent shell integration for repository navigation.
 
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -64,7 +66,7 @@ fn default_profile(shell: Shell) -> Result<PathBuf> {
             .map(PathBuf::from)
             .unwrap_or(home)
             .join(".zshrc")),
-        Shell::Fish => Ok(config_home(&home)
+        Shell::Fish => Ok(config_home(&home, env::var_os("XDG_CONFIG_HOME"))
             .join("fish")
             .join("conf.d")
             .join("shu.fish")),
@@ -104,7 +106,9 @@ fn nushell_profile(home: &Path) -> Result<PathBuf> {
             return Ok(PathBuf::from(value));
         }
     }
-    Ok(config_home(home).join("nushell").join("config.nu"))
+    Ok(config_home(home, env::var_os("XDG_CONFIG_HOME"))
+        .join("nushell")
+        .join("config.nu"))
 }
 
 /// Add or replace Shu's marked integration block without touching other configuration.
@@ -155,10 +159,8 @@ fn home_dir() -> Result<PathBuf> {
 }
 
 /// Return the user configuration root while honoring the XDG override when present.
-fn config_home(home: &Path) -> PathBuf {
-    env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"))
+fn config_home(home: &Path, xdg_config_home: Option<OsString>) -> PathBuf {
+    crate::paths::valid_xdg_config_home(xdg_config_home).unwrap_or_else(|| home.join(".config"))
 }
 
 /// Return a friendly name for setup output.
@@ -270,6 +272,29 @@ mod tests {
     #[test]
     fn powershell_wrapper_selects_a_single_path_from_native_command_output() {
         assert!(POWERSHELL_SCRIPT.contains("Select-Object -Last 1"));
+    }
+
+    #[test]
+    fn config_home_ignores_missing_empty_and_relative_xdg_values() {
+        let home = PathBuf::from("home");
+        for value in [
+            None,
+            Some(OsString::new()),
+            Some(OsString::from("relative/config")),
+        ] {
+            assert_eq!(config_home(&home, value), home.join(".config"));
+        }
+    }
+
+    #[test]
+    fn config_home_uses_an_absolute_xdg_value() {
+        let home = PathBuf::from("home");
+        let path = std::env::current_dir().unwrap().join("xdg-config");
+
+        assert_eq!(
+            config_home(&home, Some(path.clone().into_os_string())),
+            path
+        );
     }
 
     #[test]

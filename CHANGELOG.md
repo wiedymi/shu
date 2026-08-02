@@ -14,8 +14,9 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Respect `XDG_CONFIG_HOME` for the default catalog path on macOS while
-  preserving the native Application Support location when it is unset.
+- Respect an absolute `XDG_CONFIG_HOME` for the default catalog path on macOS,
+  preserve the native Application Support location when it is unset or
+  invalid, and prevent invalid XDG values from making shell paths relative.
 
 ## [0.1.23] - 2026-07-30
 

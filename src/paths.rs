@@ -1,6 +1,9 @@
-//! Repository-root expansion and canonical local-path construction.
+//! Filesystem-path validation, expansion, and canonical local-path construction.
 
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     identity::normalize_identity,
@@ -25,6 +28,11 @@ pub fn absolute(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Return an XDG configuration root only when its environment value is absolute.
+pub fn valid_xdg_config_home(value: Option<OsString>) -> Option<PathBuf> {
+    value.map(PathBuf::from).filter(|path| path.is_absolute())
+}
+
 /// Expand `~`, `~/`, and `~\\` prefixes using the current user's home directory.
 fn expand_home(value: &str) -> Result<PathBuf> {
     if value == "~" || value.starts_with("~/") || value.starts_with("~\\") {
@@ -35,4 +43,30 @@ fn expand_home(value: &str) -> Result<PathBuf> {
         return Ok(home.join(value[2..].replace('/', std::path::MAIN_SEPARATOR_STR)));
     }
     Ok(PathBuf::from(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_empty_and_relative_xdg_config_homes() {
+        for value in [
+            None,
+            Some(OsString::new()),
+            Some(OsString::from("relative/config")),
+        ] {
+            assert_eq!(valid_xdg_config_home(value), None);
+        }
+    }
+
+    #[test]
+    fn accepts_an_absolute_xdg_config_home() {
+        let path = std::env::current_dir().unwrap().join("xdg-config");
+
+        assert_eq!(
+            valid_xdg_config_home(Some(path.clone().into_os_string())),
+            Some(path)
+        );
+    }
 }
