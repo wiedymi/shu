@@ -7,6 +7,11 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Redraw repository picker frames without exposing a cleared screen between
+  key presses, preventing flicker while navigating or filtering results.
+
 ## [0.1.24] - 2026-08-02
 
 ### Changed
