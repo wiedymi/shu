@@ -7,6 +7,12 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- An optional portable agent skill that teaches compatible coding agents to
+  recognize repository-library tasks and use Shu's safe, self-described
+  workflows.
+
 ## [0.1.25] - 2026-08-03
 
 ### Changed

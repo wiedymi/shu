@@ -34,6 +34,17 @@ from source instead:
 cargo install --git https://github.com/wiedymi/shu
 ```
 
+### Optional agent skill
+
+Shu works with coding agents through its normal help and structured output.
+Install the optional [Shu skill](skills/shu/SKILL.md) globally when you also
+want compatible agents to recognize repository-library tasks and choose Shu
+automatically:
+
+```sh
+npx skills add wiedymi/shu --skill shu -g
+```
+
 ## Start here
 
 Add a project you already have, or clone one you want. Shu creates its local
