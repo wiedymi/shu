@@ -7,6 +7,12 @@ and releases use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-08-03
+
+### Changed
+
+- Update the TOML parser dependency to its latest compatible patch release.
+
 ### Fixed
 
 - Redraw repository picker frames without exposing a cleared screen between
@@ -378,7 +384,8 @@ and releases use [Semantic Versioning](https://semver.org/).
 - Built-in fuzzy repository picker and shell navigation wrappers.
 - Offline CLI integration tests and Docker end-to-end coverage.
 
-[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/wiedymi/shu/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/wiedymi/shu/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/wiedymi/shu/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/wiedymi/shu/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/wiedymi/shu/compare/v0.1.21...v0.1.22
