@@ -9,9 +9,10 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 use crossterm::{
+    SynchronizedUpdate,
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    execute,
+    execute, queue,
     style::{Color, Stylize},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -328,86 +329,114 @@ impl PickerTerminal {
     /// Redraw Shu's focused repository picker.
     fn render(&mut self, query: &str, candidates: &[Candidate], selected: usize) -> Result<()> {
         let (width, height) = terminal_size()?;
-        let visible = usize::from(height.saturating_sub(6)) / 3;
-        execute!(self.stderr, MoveTo(0, 0), Clear(ClearType::All))?;
-        let first_visible = selected.saturating_sub(visible.saturating_sub(1));
-        let visible_candidates = candidates
-            .iter()
-            .skip(first_visible)
-            .take(visible)
-            .collect::<Vec<_>>();
-        // Raw mode disables the terminal's normal NL-to-CRLF conversion. Use
-        // CRLF explicitly so every logical row starts in column zero instead
-        // of continuing from the end of the preceding row.
-        write!(
-            self.stderr,
-            "{}\r\n\r\n",
-            "Pick a repository".with(Color::Cyan).bold()
-        )?;
-        write!(self.stderr, "{} ", " ".on(Color::Cyan))?;
-        if query.is_empty() {
-            write!(
-                self.stderr,
-                "{}\r\n\r\n",
-                "Search repositories".with(Color::DarkGrey)
-            )?;
-        } else {
-            write!(self.stderr, "{query}\r\n\r\n")?;
-        }
-        for (index, candidate) in visible_candidates.into_iter().enumerate() {
-            let row = &candidate.identity;
-            if first_visible + index == selected {
-                write!(
-                    self.stderr,
-                    "{} {}  {}\r\n",
-                    "›".with(Color::Cyan).bold(),
-                    fit_to_width(row, width.saturating_sub(8)).bold(),
-                    candidate.location.symbol().with(Color::Cyan).bold(),
-                )?;
-            } else {
-                write!(
-                    self.stderr,
-                    "  {}  {}\r\n",
-                    fit_to_width(row, width.saturating_sub(8)),
-                    candidate.location.symbol().with(Color::Cyan),
-                )?;
-            }
-            let branch = candidate
-                .branch
-                .as_ref()
-                .map(|branch| format!("  {branch}"))
-                .unwrap_or_default();
-            write!(
-                self.stderr,
-                "  {}{}\r\n\r\n",
-                fit_to_width(
-                    &candidate.path.display().to_string(),
-                    width.saturating_sub(4)
-                )
-                .with(Color::DarkGrey),
-                branch.with(Color::DarkGrey),
-            )?;
-        }
-        let count = candidates.len();
-        write!(
-            self.stderr,
-            "{} {}   {} {}   {} {}\r\n",
-            "◆".with(Color::Cyan),
-            "primary".with(Color::DarkGrey),
-            "◇".with(Color::Cyan),
-            "checkout".with(Color::DarkGrey),
-            "⎇".with(Color::Cyan),
-            "worktree".with(Color::DarkGrey),
-        )?;
-        write!(
-            self.stderr,
-            "{}  ·  {}\r\n",
-            format!("{count} matches").with(Color::DarkGrey),
-            "↑↓ navigate  / filter  enter open  esc cancel".with(Color::DarkGrey),
-        )?;
-        self.stderr.flush()?;
+        let frame = picker_frame(query, candidates, selected, width, height)?;
+        draw_frame(&mut self.stderr, &frame)?;
         Ok(())
     }
+}
+
+/// Build one complete frame before exposing it to the terminal.
+fn picker_frame(
+    query: &str,
+    candidates: &[Candidate],
+    selected: usize,
+    width: u16,
+    height: u16,
+) -> std::io::Result<Vec<u8>> {
+    let visible = usize::from(height.saturating_sub(6)) / 3;
+    let first_visible = selected.saturating_sub(visible.saturating_sub(1));
+    let visible_candidates = candidates
+        .iter()
+        .skip(first_visible)
+        .take(visible)
+        .collect::<Vec<_>>();
+    let mut frame = Vec::new();
+    queue!(frame, Clear(ClearType::CurrentLine))?;
+    write!(frame, "{}", "Pick a repository".with(Color::Cyan).bold())?;
+    next_frame_line(&mut frame)?;
+    next_frame_line(&mut frame)?;
+    write!(frame, "{} ", " ".on(Color::Cyan))?;
+    if query.is_empty() {
+        write!(
+            frame,
+            "{}",
+            fit_to_width("Search repositories", width.saturating_sub(2)).with(Color::DarkGrey)
+        )?;
+    } else {
+        write!(frame, "{}", fit_to_width(query, width.saturating_sub(2)))?;
+    }
+    next_frame_line(&mut frame)?;
+    next_frame_line(&mut frame)?;
+    for (index, candidate) in visible_candidates.into_iter().enumerate() {
+        let row = &candidate.identity;
+        if first_visible + index == selected {
+            write!(
+                frame,
+                "{} {}  {}",
+                "›".with(Color::Cyan).bold(),
+                fit_to_width(row, width.saturating_sub(8)).bold(),
+                candidate.location.symbol().with(Color::Cyan).bold(),
+            )?;
+        } else {
+            write!(
+                frame,
+                "  {}  {}",
+                fit_to_width(row, width.saturating_sub(8)),
+                candidate.location.symbol().with(Color::Cyan),
+            )?;
+        }
+        next_frame_line(&mut frame)?;
+        let branch = candidate
+            .branch
+            .as_ref()
+            .map(|branch| format!("  {branch}"))
+            .unwrap_or_default();
+        let detail = format!("{}{branch}", candidate.path.display());
+        write!(
+            frame,
+            "  {}",
+            fit_to_width(&detail, width.saturating_sub(4)).with(Color::DarkGrey),
+        )?;
+        next_frame_line(&mut frame)?;
+        next_frame_line(&mut frame)?;
+    }
+    let count = candidates.len();
+    write!(
+        frame,
+        "{} {}   {} {}   {} {}",
+        "◆".with(Color::Cyan),
+        "primary".with(Color::DarkGrey),
+        "◇".with(Color::Cyan),
+        "checkout".with(Color::DarkGrey),
+        "⎇".with(Color::Cyan),
+        "worktree".with(Color::DarkGrey),
+    )?;
+    next_frame_line(&mut frame)?;
+    let help = format!(
+        "{count} matches  ·  {}",
+        "↑↓ navigate  / filter  enter open  esc cancel"
+    );
+    write!(
+        frame,
+        "{}",
+        fit_to_width(&help, width).with(Color::DarkGrey),
+    )?;
+    Ok(frame)
+}
+
+/// Start a cleared row without relying on raw mode to translate newlines.
+fn next_frame_line(frame: &mut Vec<u8>) -> std::io::Result<()> {
+    frame.write_all(b"\r\n")?;
+    queue!(frame, Clear(ClearType::CurrentLine))
+}
+
+/// Replace the prior frame without exposing an intermediate blank screen.
+fn draw_frame(writer: &mut impl Write, frame: &[u8]) -> std::io::Result<()> {
+    writer.sync_update(|writer| -> std::io::Result<()> {
+        queue!(writer, MoveTo(0, 0))?;
+        writer.write_all(frame)?;
+        queue!(writer, Clear(ClearType::FromCursorDown))
+    })?
 }
 
 /// Return a usable screen size even when a terminal reports a transient zero size.
@@ -465,5 +494,22 @@ mod tests {
         assert_eq!(LocationKind::Primary.symbol(), "◆");
         assert_eq!(LocationKind::Checkout.symbol(), "◇");
         assert_eq!(LocationKind::Worktree.symbol(), "⎇");
+    }
+
+    #[test]
+    fn picker_redraw_does_not_clear_or_scroll_between_frames() {
+        let frame = picker_frame("", &[], 0, 80, 6).unwrap();
+        let mut output = Vec::new();
+
+        draw_frame(&mut output, &frame).unwrap();
+
+        assert!(output.starts_with(b"\x1b[?2026h"));
+        assert!(output.ends_with(b"\x1b[?2026l"));
+        assert!(!output.windows(4).any(|bytes| bytes == b"\x1b[2J"));
+        assert!(!frame.ends_with(b"\r\n"));
+        assert_eq!(
+            frame.windows(2).filter(|bytes| *bytes == b"\r\n").count(),
+            5
+        );
     }
 }
